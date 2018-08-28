@@ -191,13 +191,15 @@ void displayGame() {
 
 void displayDeath() {
   if (isSourceOfDeath) {
-    //    // saturation oscillate between red and white
-    //    byte sat = 127 + (127 * sin_d(millis() / 3));
-    //    setColor(makeColorHSB(0, sat, 255));
-
-        // color oscillate between red and yellow
-        byte hue = 20 + (20 * sin_d(millis() / 3));
-        setColor(makeColorHSB(hue, 255, 255));
+    
+    // color pattern red > orange > yellow > white > yellow > orange > red
+    byte hue = 30 + (30 * sin_d(millis() / 5));
+    byte sat = 255;
+    if ( hue > 40 ) {
+      sat = 255 - (12 * (hue - 40));  // saturation goes from 255 to 0 when at peak
+      hue = 40;                       // stay in the yellow spectrum
+    }
+    setColor(makeColorHSB(hue, sat, 255));
   }
 
   else {
