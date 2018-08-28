@@ -1,5 +1,7 @@
 /*
-   Wackamole
+   モグラ退治 (Whack-a-mole)
+
+   description: https://www.youtube.com/watch?v=Agjaa1DyKyA
 
    written by:
    Dan King
@@ -215,6 +217,3 @@ float sin_d( uint16_t degrees ) {
 
   return sin( ( degrees / 360.0F ) * 2.0F * PI   );
 }
-
-
-
