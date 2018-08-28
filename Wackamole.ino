@@ -18,7 +18,6 @@ long timeSinceGameBegan;
 
 long timeOfWhack;
 
-
 int waitIncrement;
 int countdownIncrement;
 
@@ -26,6 +25,8 @@ byte countdownState = 0;
 
 Timer waitTimer;
 Timer countdownTimer;
+
+bool isSourceOfDeath = false;
 
 void setup() {
   // put your setup code here, to run once:
@@ -58,6 +59,7 @@ void setupLoop() {
   //look for double clicks to move to the next state
   if (buttonDoubleClicked()) {
     gameState = GAME;
+    isSourceOfDeath = false;
   }
   //also look for neighbors in game state and go to game
   FOREACH_FACE(f) {
@@ -70,7 +72,6 @@ void setupLoop() {
   }
   //now that we've evaluated each transition, let's do the visual transition
   if (gameState == GAME) {
-    setColor(GREEN);
     gameBeginTime = millis();
     waitTimer.set(rand(5000) + 1000);
   }
@@ -123,6 +124,7 @@ void aboveMoleLoop() {
 
   //check if the timer has reached 6
   if (countdownState == 6) { //the game has ended, you DUMMY
+    isSourceOfDeath = true;
     gameState = DEATH;
     countdownState = 0;
     moleState = HIDDEN;
@@ -173,21 +175,44 @@ void displayGame() {
     setColor(ORANGE);
     // show the length of time left
     FOREACH_FACE(f) {
-      if( f < countdownState ) {
+      if ( f < countdownState ) {
         setFaceColor(f, RED);
       }
     }
   }
-  
+
   // if we get hit, we should flash white...
   long timeSinceWhack = millis() - timeOfWhack;
-  if(timeSinceWhack < 1000 ) {
-    byte bri = 255 - (timeSinceWhack/4);
-    setColor(dim(WHITE, bri)); 
+  if (timeSinceWhack < 1000 ) {
+    byte bri = 255 - (timeSinceWhack / 4);
+    setColor(dim(WHITE, bri));
   }
 }
 
 void displayDeath() {
-  setColor(RED);
+  if (isSourceOfDeath) {
+    //    // saturation oscillate between red and white
+    //    byte sat = 127 + (127 * sin_d(millis() / 3));
+    //    setColor(makeColorHSB(0, sat, 255));
+
+        // color oscillate between red and yellow
+        byte hue = 20 + (20 * sin_d(millis() / 3));
+        setColor(makeColorHSB(hue, 255, 255));
+  }
+
+  else {
+    setColor(RED);
+  }
 }
+
+/*
+   Sin in degrees ( standard sin() takes radians )
+*/
+
+float sin_d( uint16_t degrees ) {
+
+  return sin( ( degrees / 360.0F ) * 2.0F * PI   );
+}
+
+
 
