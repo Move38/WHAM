@@ -1,8 +1,5 @@
 enum gameStates {SETUP, GAME, DEATH};//cycles through the game
 byte gameState = SETUP;
-
-byte playerCount = 1;//only communicated in setup state, ranges from 1-3
-
 byte grassHue = 70;
 
 #define ROUND_MIN 1 //starting round
@@ -17,9 +14,10 @@ bool isRippling = false;
 byte ripplingInterval = 200;
 Timer ripplingTimer;
 
+byte playerCount = 1;//only communicated in setup state, ranges from 1-3
 byte currentPlayerMole = 1;
 byte playerMoleUsage[3] = {0, 0, 0};
-Color playerColors[3] = {makeColorHSB(0, 255, 255), makeColorHSB(42, 255, 255), makeColorHSB(212, 255, 255)};
+byte playerHues[3] = {0, 42, 212};
 
 #define EMERGE_INTERVAL_MAX 1500
 #define EMERGE_INTERVAL_MIN 750
@@ -45,6 +43,8 @@ byte strikes = 0;//communicated in game mode, incremented which each strike
 Color strikeColors[3] = {YELLOW, ORANGE, RED};
 
 bool isSourceOfDeath;
+long timeOfDeath;
+#define DEATH_ANIMATION_INTERVAL 750
 byte losingPlayer = 0;
 
 void setup() {
@@ -264,6 +264,7 @@ void gameLoopGeneric() {
           gameState = DEATH;
           isSourceOfDeath = true;
           losingPlayer = 1;
+          timeOfDeath = millis();
         }
       } else {//just ripple it a bit to show we heard you
         isRippling = true;
@@ -292,6 +293,7 @@ void gameLoopGeneric() {
     gameState = DEATH;
     isSourceOfDeath = true;
     losingPlayer = currentPlayerMole;
+    timeOfDeath = millis();
   }
 
   //listen for death
@@ -301,6 +303,7 @@ void gameLoopGeneric() {
       if (neighborGameState == DEATH) {
         gameState = DEATH;
         isSourceOfDeath = false;
+        timeOfDeath = millis();
       }
     }
   }//end death check
@@ -367,14 +370,14 @@ void resetAllVariables() {
 void setupDisplayLoop() {
   setColor(makeColorHSB(grassHue, 255, 255));
 
-  setColorOnFace(playerColors[0], 0);//we always have player 1
+  setColorOnFace(makeColorHSB(playerHues[0], 255, 255), 0); //we always have player 1
 
   if (playerCount >= 2) {//do we have player 2?
-    setColorOnFace(playerColors[1], 2);
+    setColorOnFace(makeColorHSB(playerHues[1], 255, 255), 2);
   }
 
   if (playerCount == 3) {//do we have player 3?
-    setColorOnFace(playerColors[2], 4);
+    setColorOnFace(makeColorHSB(playerHues[2], 255, 255), 4);
   }
 }
 
@@ -390,7 +393,7 @@ void gameDisplayLoop() {
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     byte currentBrightness = 255 - brightnessSubtraction;
-    Color currentColor = playerColors[currentPlayerMole - 1];
+    Color currentColor = makeColorHSB(playerHues[currentPlayerMole - 1], 255, 255);
     setColor(dim(currentColor, currentBrightness));
   } else if (isStriking) {//flash [color] for a moment
     //which color? depends on number of strikes
@@ -417,11 +420,19 @@ void gameDisplayLoop() {
 }
 
 void deathDisplayLoop() {
-  setColor(OFF);
+  //ok, so here we do this interesting little trick
+  long currentAnimationPosition = (millis() - timeOfDeath) % (DEATH_ANIMATION_INTERVAL * 2);
+  byte animationValue;
+  if (currentAnimationPosition < DEATH_ANIMATION_INTERVAL) { //we are in the down swing (255 >> 0)
+    animationValue = map_m (currentAnimationPosition, 0, DEATH_ANIMATION_INTERVAL, 255, 0);
+  } else {//we are in the up swing (0 >> 255)
+    animationValue = map_m (currentAnimationPosition - DEATH_ANIMATION_INTERVAL, 0, DEATH_ANIMATION_INTERVAL, 0, 255);
+  }
+
   if (isSourceOfDeath) {
-    setColor(WHITE);
+    setColor(makeColorHSB(playerHues[losingPlayer - 1], animationValue, 255));
   } else {
-    setColor(playerColors[losingPlayer - 1]);
+    setColor(makeColorHSB(playerHues[losingPlayer - 1], 255, animationValue));
   }
 }
 
