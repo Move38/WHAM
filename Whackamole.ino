@@ -346,7 +346,6 @@ void deathLoop() {
 
 void resetAllVariables() {
   //RESET ALL GAME VARIABLES
-  playerCount = 1;
   goSignal = INERT;
   roundCounter = 0;
   roundActive = false;
