@@ -18,6 +18,7 @@ byte ripplingInterval = 200;
 Timer ripplingTimer;
 
 byte currentPlayerMole = 1;
+byte playerMoleUsage[3] = {0, 0, 0};
 Color playerColors[3] = {makeColorHSB(0, 255, 255), makeColorHSB(42, 255, 255), makeColorHSB(212, 255, 255)};
 
 #define EMERGE_INTERVAL_MAX 1500
@@ -227,7 +228,23 @@ void gameLoopGeneric() {
       int fadeTime = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
       aboveTimer.set(fadeTime);
       //set which player is up
-      currentPlayerMole = rand(playerCount - 1) + 1;
+      if (playerCount > 1) {//multiplayer
+        //choose a mole that has been used less than twice since the last reset
+        do {
+          currentPlayerMole = rand(playerCount - 1) + 1;
+        } while (playerMoleUsage[currentPlayerMole - 1] == 2);
+        //we found one! increment that placement
+        playerMoleUsage[currentPlayerMole - 1] += 1;
+
+        //if all moles have been used twice, do a reset
+        if ((playerMoleUsage[0] + playerMoleUsage[1] + playerMoleUsage[2]) == playerCount * 2) {
+          playerMoleUsage[0] = 0;
+          playerMoleUsage[1] = 0;
+          playerMoleUsage[2] = 0;
+        }
+      } else {//singleplayer
+        currentPlayerMole = 1;
+      }
     }
   }
 
@@ -338,6 +355,9 @@ void resetAllVariables() {
   isFlashing = false;
   isRippling = false;
   isStriking = false;
+  playerMoleUsage[0] = 0;
+  playerMoleUsage[1] = 0;
+  playerMoleUsage[2] = 0;
 }
 
 /////////////////
