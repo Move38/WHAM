@@ -11,7 +11,6 @@ byte roundCounter = 0;
 Timer roundTimer;
 bool roundActive = false;
 
-bool isMaster = false;
 enum goSignals {INERT, GO, RESOLVING};//used in game state to signal round begin from the master mole
 byte goSignal = INERT;
 bool isRippling = false;
@@ -123,7 +122,6 @@ void setupLoop() {
   //listen for double-clicks to move into game mode and become master
   if (buttonDoubleClicked()) {
     gameState = GAME;
-    isMaster = true;
     roundActive = false;
     roundTimer.set(EMERGE_INTERVAL_MAX);
     isFlashing = true;
@@ -136,7 +134,8 @@ void setupLoop() {
       byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
       if (neighborGameState == GAME) {
         gameState = GAME;
-        isMaster = false;
+        roundActive = false;
+        roundTimer.set(EMERGE_INTERVAL_MAX);
         isFlashing = true;
         flashingTimer.set(flashingInterval);
       }
@@ -145,11 +144,46 @@ void setupLoop() {
 }
 
 void gameLoopGeneric() {
-  //run specific loop
-  if (isMaster) {
-    gameLoopMaster();
-  } else {
-    gameLoopReceiver();
+
+  //start new round based on two different things
+  if (!roundActive) {//so a round is not started
+    bool newRoundInitiated = false;
+
+
+    //look for neighbors commanding us to start a round
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
+        if (getGameState(getLastValueReceivedOnFace(f)) == GAME) { //a trusted neighbor
+          if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//telling us to go
+            newRoundInitiated = true;
+          }
+        }
+      }
+    }
+
+    //listen for internal timer telling us to go
+    if (!roundActive && roundTimer.isExpired()) {
+      newRoundInitiated = true;
+    }
+
+    //start a new round!
+    if (newRoundInitiated) {
+      if (roundCounter < ROUND_MAX) {
+        roundCounter++;
+      }
+
+      isRippling = true;
+      ripplingTimer.set(ripplingInterval);
+      goSignal = GO;
+      roundActive = true;
+
+      int emergeInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+      emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
+      int aboveInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+
+      int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + flashingInterval + emergeInterval;
+      roundTimer.set(roundInterval);
+    }
   }
 
   //resolve goSignal propogation
@@ -255,50 +289,6 @@ void gameLoopGeneric() {
   }//end death check
 }
 
-void gameLoopMaster() {
-  if (roundTimer.isExpired()) {//TIME FOR A NEW ROUND, MOLES
-    if (roundCounter < ROUND_MAX) {
-      roundCounter++;
-    }
-
-    isRippling = true;
-    ripplingTimer.set(ripplingInterval);
-    goSignal = GO;
-    roundActive = true;
-
-    int emergeInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-    emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
-    int aboveInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
-
-    int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + flashingInterval + emergeInterval;
-    roundTimer.set(roundInterval);
-  }
-}
-
-void gameLoopReceiver() {
-  //listen for new rounds
-  if (!roundActive) {
-    FOREACH_FACE(f) {
-      if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
-        if (getGameState(getLastValueReceivedOnFace(f)) == GAME) { //a trusted neighbor
-          if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//telling us to go
-            if (roundCounter < ROUND_MAX) {
-              roundCounter++;
-            }
-            isRippling = true;
-            ripplingTimer.set(ripplingInterval);
-            goSignal = GO;
-            roundActive = true;
-
-            int emergeInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-            emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
-          }
-        }
-      }
-    }
-  }
-}
-
 void deathLoop() {
 
   //listen for losing player
@@ -337,7 +327,6 @@ void deathLoop() {
 void resetAllVariables() {
   //RESET ALL GAME VARIABLES
   playerCount = 1;
-  isMaster = false;
   goSignal = INERT;
   roundCounter = 0;
   roundActive = false;
