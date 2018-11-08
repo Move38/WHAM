@@ -1,219 +1,450 @@
-/*
-   モグラ退治 (Whack-a-mole)
-
-   description: https://www.youtube.com/watch?v=Agjaa1DyKyA
-
-   written by:
-   Dan King
-
-   updated by:
-   Jonathan Bobrow
-*/
-enum gameStates {SETUP, GAME, DEATH};
-enum moleStates {HIDDEN, ABOVE};
-
+enum gameStates {SETUP, GAME, DEATH};//cycles through the game
 byte gameState = SETUP;
-byte moleState = HIDDEN;
 
-long gameBeginTime;
-long timeSinceGameBegan;
+byte playerCount = 1;//only communicated in setup state, ranges from 1-3
 
-long timeOfWhack;
+byte grassHue = 70;
 
-int waitIncrement;
-int countdownIncrement;
+#define ROUND_MIN 1 //starting round
+#define ROUND_MAX 20 //final difficulty level, though the game continues
+byte roundCounter = 0;
+Timer roundTimer;
+bool roundActive = false;
 
-byte countdownState = 0;
+bool isMaster = false;
+enum goSignals {INERT, GO, RESOLVING};//used in game state to signal round begin from the master mole
+byte goSignal = INERT;
+bool isRippling = false;
+byte ripplingInterval = 200;
+Timer ripplingTimer;
 
-Timer waitTimer;
-Timer countdownTimer;
+byte currentPlayerMole = 1;
+Color playerColors[3] = {makeColorHSB(0, 255, 255), makeColorHSB(42, 255, 255), makeColorHSB(212, 255, 255)};
 
-bool isSourceOfDeath = false;
+#define EMERGE_INTERVAL_MAX 1500
+#define EMERGE_INTERVAL_MIN 750
+#define EMERGE_DRIFT 1000
+Timer emergeTimer;//triggered when the GO signal is received, interval shrinks as roundCounter increases
+
+#define POP_CHANCE_MAX 80
+#define POP_CHANCE_MIN 50
+
+bool isAbove = false;
+#define ABOVE_INTERVAL_MAX 2000
+#define ABOVE_INTERVAL_MIN 1000
+Timer aboveTimer;
+
+bool isFlashing = false;
+int flashingInterval = 500;
+Timer flashingTimer;
+
+bool isStriking = false;
+byte strikingInterval = 200;
+Timer strikingTimer;
+byte strikes = 0;//communicated in game mode, incremented which each strike
+Color strikeColors[3] = {YELLOW, ORANGE, RED};
+
+bool isSourceOfDeath;
+byte losingPlayer = 0;
 
 void setup() {
   // put your setup code here, to run once:
+
 }
 
 void loop() {
-  rand(1);      // make random seem actually random... this should not be necessary
-
+  // put your main code here, to run repeatedly:
   switch (gameState) {
     case SETUP:
       setupLoop();
-      displaySetup();
+      setupDisplayLoop();
       break;
     case GAME:
-      gameLoop();
-      displayGame();
+      gameLoopGeneric();
+      gameDisplayLoop();
       break;
     case DEATH:
       deathLoop();
-      displayDeath();
+      deathDisplayLoop();
       break;
   }
 
-  //send out communications
-  byte sendData = (gameState * 10) + moleState;
+  //dump button data
+  buttonSingleClicked();
+  buttonDoubleClicked();
+  buttonPressed();
+
+  //do communication (done here to avoid miscommunication)
+  byte sendData;
+  switch (gameState) {
+    case SETUP:
+      sendData = (gameState << 4) + (playerCount);
+      break;
+    case GAME:
+      sendData = (gameState << 4) + (goSignal << 2) + (strikes);
+      break;
+    case DEATH:
+      sendData = (gameState << 4) + (losingPlayer);
+      break;
+  }
   setValueSentOnAllFaces(sendData);
 }
 
+//////////////
+//GAME LOOPS//
+//////////////
+
 void setupLoop() {
-  //look for double clicks to move to the next state
+  //listen for clicks to increment player count
+  if (buttonSingleClicked()) {
+    playerCount++;
+    if (playerCount > 3) {
+      playerCount = 1;
+    }
+  }
+
+  //listen for neighbors with higher player counts and conform
+  FOREACH_FACE(f) {
+    if (!isValueReceivedOnFaceExpired(f)) {//a neighbor!
+      byte neighborPlayerCount = getPlayerCount(getLastValueReceivedOnFace(f));
+      byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
+      if (neighborGameState == SETUP) { //this neighbor is in our mode, so we can trust his communication
+        if (playerCount == 1 && neighborPlayerCount == 2) {
+          playerCount = 2;
+        } else if (playerCount == 2 && neighborPlayerCount == 3) {
+          playerCount = 3;
+        } else if (playerCount == 3 && neighborPlayerCount == 1) {
+          playerCount = 1;
+        }
+      }
+    }
+  }
+
+  //listen for double-clicks to move into game mode and become master
   if (buttonDoubleClicked()) {
     gameState = GAME;
-    isSourceOfDeath = false;
+    isMaster = true;
+    roundActive = false;
+    roundTimer.set(EMERGE_INTERVAL_MAX);
+    isFlashing = true;
+    flashingTimer.set(flashingInterval);
   }
-  //also look for neighbors in game state and go to game
+
+  //listen for neighbors in game mode to move to game mode myself and become receiver
   FOREACH_FACE(f) {
-    if (!isValueReceivedOnFaceExpired(f)) {//found a neighbor
-      byte neighborData = getLastValueReceivedOnFace(f);
-      if (neighborData / 10 == GAME) {//neighbor is in game state. GO!
+    if (!isValueReceivedOnFaceExpired(f)) {//a neighbor!
+      byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
+      if (neighborGameState == GAME) {
         gameState = GAME;
+        isMaster = false;
+        isFlashing = true;
+        flashingTimer.set(flashingInterval);
       }
     }
   }
-  //now that we've evaluated each transition, let's do the visual transition
-  if (gameState == GAME) {
-    gameBeginTime = millis();
-    waitTimer.set(rand(5000) + 1000);
-  }
 }
 
-void gameLoop() {
-  //update the time
-  timeSinceGameBegan = millis() - gameBeginTime;
-  if (timeSinceGameBegan > 60000) { //game has exceeded one minute
-    timeSinceGameBegan = 60000;//this stops the game from accelerating further
+void gameLoopGeneric() {
+  //run specific loop
+  if (isMaster) {
+    gameLoopMaster();
+  } else {
+    gameLoopReceiver();
   }
-  //determine which mole loop to run
-  if (moleState == HIDDEN) {
-    hiddenMoleLoop();
-  } else if (moleState == ABOVE) {
-    aboveMoleLoop();
+
+  //resolve goSignal propogation
+  if (goSignal == GO) {//we are going. Do all our neighbors know this?
+    bool canResolve = true;
+
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
+        if (getGoSignal(getLastValueReceivedOnFace(f)) == INERT) {//this neighbor has not been told
+          canResolve = false;
+        }
+      }
+    }
+
+    if (canResolve) {
+      goSignal = RESOLVING;
+    }
+  } else if (goSignal == RESOLVING) {
+    bool canInert = true;
+
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
+        if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//this neighbor still has work to do
+          canInert = false;
+        }
+      }
+    }
+
+    if (canInert) {
+      goSignal = INERT;
+    }
   }
-  //now, we look for neighbors who have died
+
+  //listen for my emerge timer to expire so I can go above
+  if (roundActive && emergeTimer.isExpired()) {
+    roundActive = false;
+    //calculate if I should go above
+    byte popChance = map_m(roundCounter, ROUND_MIN, ROUND_MAX, POP_CHANCE_MIN, POP_CHANCE_MAX);
+    if (rand(100) < popChance) {
+      isAbove = true;
+      int fadeTime = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      aboveTimer.set(fadeTime);
+      //set which player is up
+      currentPlayerMole = rand(playerCount - 1) + 1;
+    }
+  }
+
+  //listen for button presses
+  if (buttonPressed()) {
+    if (isAbove) { //there is a mole here
+      isAbove = false;//kill the mole
+      isFlashing = true;//start the flash
+      flashingTimer.set(flashingInterval);
+      roundActive = false;
+    } else {//there is no mole here
+      if (playerCount == 1) {//single player, get a strike
+        strikes++;
+        strikingTimer.set(strikingInterval);
+        isStriking = true;
+        if (strikes == 3) {
+          gameState = DEATH;
+          isSourceOfDeath = true;
+          losingPlayer = 1;
+        }
+      } else {//just ripple it a bit to show we heard you
+        isRippling = true;
+        ripplingTimer.set(ripplingInterval);
+      }
+    }
+  }//end button press check
+
+  //listen for strikes from neighbors
   FOREACH_FACE(f) {
-    if (!isValueReceivedOnFaceExpired(f)) {//found a neighbor
-      byte neighborData = getLastValueReceivedOnFace(f);
-      if (neighborData / 10 == DEATH) {//neighbor is in DEATH state. GO!
-        gameState = DEATH;
-        moleState = HIDDEN;
+    if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
+      byte neighborStrikes = getStrikes(getLastValueReceivedOnFace(f));
+      byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
+      if (neighborGameState == GAME) { //this neighbor is in game state, so we can trust their communication
+        if (neighborStrikes > strikes) { //that neighbor is reporting more strikes than me. Take that number
+          strikes = neighborStrikes;
+          isStriking = true;
+          strikingTimer.set(strikingInterval);
+        }
       }
     }
   }
-}
 
-void hiddenMoleLoop() {
-  //here we wait for the timer to expired
-  if (waitTimer.isExpired()) {
-    waitIncrement = 3000 - (timeSinceGameBegan / 30);  // a value between 1sec and 3sec, gets shorter as the game goes on
-    countdownIncrement = waitIncrement / 3;            // our countdown timer shortens as the game progresses
-    countdownTimer.set(countdownIncrement);            // set the countdown timer
-    moleState = ABOVE;                                 // we've waited long enough Punxsutawney!
-  }
-
-  if (buttonDown()) {
-    // miss the mole.. no mole here
-  }
-}
-
-void aboveMoleLoop() {
-  //first, we listen for the countdown timer to expire
-  if (countdownTimer.isExpired()) {
-    countdownState++;                                   //
-    countdownTimer.set(countdownIncrement);             //
-  }
-
-  //check if the timer has reached 6
-  if (countdownState == 6) { //the game has ended, you DUMMY
-    isSourceOfDeath = true;
+  //listen for my mole to cause death
+  if (isAbove && aboveTimer.isExpired()) { //my fade timer expired and I haven't been clicked, so...
     gameState = DEATH;
-    countdownState = 0;
-    moleState = HIDDEN;
+    isSourceOfDeath = true;
+    losingPlayer = currentPlayerMole;
   }
 
-  //now that we've done all that, check to see if the user hit the mole!
-  if (buttonDown()) {
-    timeOfWhack = millis();
-    moleState = HIDDEN;
-    waitIncrement = 3000 - (timeSinceGameBegan / 30);   // a value between 1sec and 3sec, gets shorter as the game goes on
-    waitTimer.set(rand(waitIncrement) + waitIncrement); // a value between our wait time and possibly twice as long
-    countdownState = 0;
+  //listen for death
+  FOREACH_FACE(f) {
+    if (!isValueReceivedOnFaceExpired(f)) {//a neighbor!
+      byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
+      if (neighborGameState == DEATH) {
+        gameState = DEATH;
+        isSourceOfDeath = false;
+      }
+    }
+  }//end death check
+}
+
+void gameLoopMaster() {
+  if (roundTimer.isExpired()) {//TIME FOR A NEW ROUND, MOLES
+    if (roundCounter < ROUND_MAX) {
+      roundCounter++;
+    }
+
+    isRippling = true;
+    ripplingTimer.set(ripplingInterval);
+    goSignal = GO;
+    roundActive = true;
+
+    int emergeInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+    emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
+    int aboveInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+
+    int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + flashingInterval + emergeInterval;
+    roundTimer.set(roundInterval);
+  }
+}
+
+void gameLoopReceiver() {
+  //listen for new rounds
+  if (!roundActive) {
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
+        if (getGameState(getLastValueReceivedOnFace(f)) == GAME) { //a trusted neighbor
+          if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//telling us to go
+            if (roundCounter < ROUND_MAX) {
+              roundCounter++;
+            }
+            isRippling = true;
+            ripplingTimer.set(ripplingInterval);
+            goSignal = GO;
+            roundActive = true;
+
+            int emergeInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+            emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
+          }
+        }
+      }
+    }
   }
 }
 
 void deathLoop() {
-  //look for double clicks to move to the next state
+
+  //listen for losing player
+  if (!isSourceOfDeath && losingPlayer == 0) {//I am not the source of death, and I don't yet know who lost
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
+        byte neighborLosingPlayer = getLosingPlayer(getLastValueReceivedOnFace(f));
+        byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
+        if (neighborGameState == DEATH) { //this neighbor is in death state, so we can trust their communication
+          if (neighborLosingPlayer != 0) {//this neighbor seems to know who lost
+            losingPlayer = neighborLosingPlayer;
+          }
+        }
+      }
+    }
+  }
+
+  //listen for double clicks to go back to setup
   if (buttonDoubleClicked()) {
     gameState = SETUP;
+    resetAllVariables();
   }
-  //also look for neighbors in game state and go to game
+
+  //listen for signal to go to setup
   FOREACH_FACE(f) {
-    if (!isValueReceivedOnFaceExpired(f)) {//found a neighbor
-      byte neighborData = getLastValueReceivedOnFace(f);
-      if (neighborData / 10 == SETUP) {//neighbor is in game state. GO!
+    if (!isValueReceivedOnFaceExpired(f)) {//a neighbor!
+      byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
+      if (neighborGameState == SETUP) {
         gameState = SETUP;
+        resetAllVariables();
       }
     }
+  }//end setup check
+}
+
+void resetAllVariables() {
+  //RESET ALL GAME VARIABLES
+  playerCount = 1;
+  isMaster = false;
+  goSignal = INERT;
+  roundCounter = 0;
+  roundActive = false;
+  currentPlayerMole = 0;
+  losingPlayer = 0;
+  strikes = 0;
+  isSourceOfDeath = false;
+  isAbove = false;
+  isFlashing = false;
+  isRippling = false;
+  isStriking = false;
+}
+
+/////////////////
+//DISPLAY LOOPS//
+/////////////////
+
+void setupDisplayLoop() {
+  setColor(makeColorHSB(grassHue, 255, 255));
+
+  setColorOnFace(playerColors[0], 0);//we always have player 1
+
+  if (playerCount >= 2) {//do we have player 2?
+    setColorOnFace(playerColors[1], 2);
+  }
+
+  if (playerCount == 3) {//do we have player 3?
+    setColorOnFace(playerColors[2], 4);
   }
 }
 
-/*
-   Display states
-*/
-
-void displaySetup() {
-  setColor(BLUE);
-}
-
-void displayGame() {
-  //  setColor(GREEN);
-  // if we are in hiding, then we should be green
-  if (moleState == HIDDEN) {
-    setColor(GREEN);
-  }
-  // if we are showing then we should show red for how long we are showing
-  else if (moleState == ABOVE) {
-    setColor(ORANGE);
-    // show the length of time left
+void gameDisplayLoop() {
+  //do each animation
+  if (isFlashing) {//fade from white to green based on flashingTimer
+    byte currentSaturation = 255 - map_m(flashingTimer.getRemaining(), 0, flashingInterval, 0, 255);
+    setColor(makeColorHSB(grassHue, currentSaturation, 255));
+  } else if (isAbove) {//fade from [color] to off based on aboveTimer
+    long currentInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    long currentTime = aboveTimer.getRemaining();
+    byte brightnessSubtraction = map_m(currentTime, currentInterval, 0, 0, 255);
+    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
+    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
+    byte currentBrightness = 255 - brightnessSubtraction;
+    Color currentColor = playerColors[currentPlayerMole - 1];
+    setColor(dim(currentColor, currentBrightness));
+  } else if (isStriking) {//flash [color] for a moment
+    //which color? depends on number of strikes
+    setColor(strikeColors[strikes - 1]);
+  } else if (isRippling) {//randomize green hue for a moment
     FOREACH_FACE(f) {
-      if ( f < countdownState ) {
-        setFaceColor(f, RED);
-      }
+      setColorOnFace(makeColorHSB(grassHue, 255, rand(50) + 205), f);
+      //setColorOnFace(makeColorHSB(grassHue + rand(20), 255, 255), f);
     }
+  } else {//just be green
+    setColor(makeColorHSB(grassHue, 255, 255));
   }
 
-  // if we get hit, we should flash white...
-  long timeSinceWhack = millis() - timeOfWhack;
-  if (timeSinceWhack < 1000 ) {
-    byte bri = 255 - (timeSinceWhack / 4);
-    setColor(dim(WHITE, bri));
+  //resolve non-death animation timers
+  if (flashingTimer.isExpired()) {
+    isFlashing = false;
+  }
+  if (strikingTimer.isExpired()) {
+    isStriking = false;
+  }
+  if (ripplingTimer.isExpired()) {
+    isRippling = false;
   }
 }
 
-void displayDeath() {
+void deathDisplayLoop() {
+  setColor(OFF);
   if (isSourceOfDeath) {
-    
-    // color pattern red > orange > yellow > white > yellow > orange > red
-    byte hue = 30 + (30 * sin_d(millis() / 5));
-    byte sat = 255;
-    if ( hue > 40 ) {
-      sat = 255 - (12 * (hue - 40));  // saturation goes from 255 to 0 when at peak
-      hue = 40;                       // stay in the yellow spectrum
-    }
-    setColor(makeColorHSB(hue, sat, 255));
-  }
-
-  else {
-    setColor(RED);
+    setColor(WHITE);
+  } else {
+    setColor(playerColors[losingPlayer - 1]);
   }
 }
 
-/*
-   Sin in degrees ( standard sin() takes radians )
-*/
+/////////////////
+//COMMUNICATION//
+/////////////////
 
-float sin_d( uint16_t degrees ) {
+byte getGameState(byte data) {//1st and 2nd bit
+  return (data >> 4);
+}
 
-  return sin( ( degrees / 360.0F ) * 2.0F * PI   );
+byte getPlayerCount(byte data) {//5th and 6th bit
+  return (data & 3);
+}
+
+byte getGoSignal(byte data) {//3rd and 4th bit
+  return ((data >> 2) & 3);
+}
+
+byte getStrikes(byte data) {//5th and 6th bit
+  return (data & 3);
+}
+
+byte getLosingPlayer(byte data) {//5th and 6th bit
+  return (data & 3);
+}
+
+///////////////
+//CONVENIENCE//
+///////////////
+
+long map_m(long x, long in_min, long in_max, long out_min, long out_max)
+{
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
