@@ -27,7 +27,7 @@ Color playerColors[3] = {makeColorHSB(0, 255, 255), makeColorHSB(42, 255, 255), 
 Timer emergeTimer;//triggered when the GO signal is received, interval shrinks as roundCounter increases
 
 #define POP_CHANCE_MAX 80
-#define POP_CHANCE_MIN 30
+#define POP_CHANCE_MIN 50
 
 bool isAbove = false;
 #define ABOVE_INTERVAL_MAX 2000
@@ -375,7 +375,12 @@ void gameDisplayLoop() {
     byte currentSaturation = 255 - map_m(flashingTimer.getRemaining(), 0, flashingInterval, 0, 255);
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
-    byte currentBrightness = map_m(aboveTimer.getRemaining() * aboveTimer.getRemaining(), 0, map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN) * map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN), 0, 255);
+    long currentInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    long currentTime = aboveTimer.getRemaining();
+    byte brightnessSubtraction = map_m(currentTime, currentInterval, 0, 0, 255);
+    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
+    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
+    byte currentBrightness = 255 - brightnessSubtraction;
     Color currentColor = playerColors[currentPlayerMole - 1];
     setColor(dim(currentColor, currentBrightness));
   } else if (isStriking) {//flash [color] for a moment
