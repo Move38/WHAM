@@ -1,9 +1,12 @@
-enum gameStates {SETUP, GAME, DEATH};//cycles through the game
+enum gameStates {SETUP, GAME, DEATH, VICTORY};//cycles through the game
 byte gameState = SETUP;
 byte grassHue = 70;
 
-#define ROUND_MIN 1 //starting round
-#define ROUND_MAX 20 //final difficulty level, though the game continues
+#define DIFFICULTY_MIN 1 //starting round
+#define DIFFICULTY_MAX 20 //final difficulty level, though the game continues
+byte difficultyLevel = 0;
+
+#define VICTORY_ROUND_COUNT 25
 byte roundCounter = 0;
 Timer roundTimer;
 bool roundActive = false;
@@ -11,7 +14,7 @@ bool roundActive = false;
 enum goSignals {INERT, GO, RESOLVING};//used in game state to signal round begin from the master mole
 byte goSignal = INERT;
 bool isRippling = false;
-byte ripplingInterval = 200;
+#define RIPPLING_INTERVAL 500
 Timer ripplingTimer;
 
 byte playerCount = 1;//only communicated in setup state, ranges from 1-3
@@ -22,7 +25,7 @@ byte playerHues[3] = {0, 42, 212};
 #define EMERGE_INTERVAL_MAX 1500
 #define EMERGE_INTERVAL_MIN 750
 #define EMERGE_DRIFT 1000
-Timer emergeTimer;//triggered when the GO signal is received, interval shrinks as roundCounter increases
+Timer emergeTimer;//triggered when the GO signal is received, interval shrinks as difficultyLevel increases
 
 #define POP_CHANCE_MAX 80
 #define POP_CHANCE_MIN 50
@@ -60,13 +63,16 @@ void loop() {
       setupDisplayLoop();
       break;
     case GAME:
-      gameLoopGeneric();
+      gameLoop();
       gameDisplayLoop();
       break;
     case DEATH:
       deathLoop();
       deathDisplayLoop();
       break;
+    case VICTORY:
+      victoryLoop();
+      victoryDisplayLoop();
   }
 
   //dump button data
@@ -86,6 +92,8 @@ void loop() {
     case DEATH:
       sendData = (gameState << 4) + (losingPlayer);
       break;
+    case VICTORY:
+      sendData = (gameState << 4) + (goSignal << 2) + (losingPlayer);
   }
   setValueSentOnAllFaces(sendData);
 }
@@ -144,12 +152,11 @@ void setupLoop() {
   }
 }
 
-void gameLoopGeneric() {
+void gameLoop() {
 
-  //start new round based on two different things
-  if (!roundActive) {//so a round is not started
+  //start new round?
+  if (!roundActive) {
     bool newRoundInitiated = false;
-
 
     //look for neighbors commanding us to start a round
     FOREACH_FACE(f) {
@@ -167,23 +174,30 @@ void gameLoopGeneric() {
       newRoundInitiated = true;
     }
 
-    //start a new round!
+    //we get to start a new round!
     if (newRoundInitiated) {
-      if (roundCounter < ROUND_MAX) {
-        roundCounter++;
+      roundCounter++;
+      if (roundCounter > VICTORY_ROUND_COUNT) {//GAME OVER: VICTORY
+        gameState = VICTORY;
+        int emergeInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        roundTimer.set(emergeInterval + rand(EMERGE_DRIFT));
+      } else {//GAME IS STILL ON
+        if (difficultyLevel < DIFFICULTY_MAX) {
+          difficultyLevel++;
+        }
+
+        isRippling = true;
+        ripplingTimer.set(RIPPLING_INTERVAL);
+        goSignal = GO;
+        roundActive = true;
+
+        int emergeInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
+        int aboveInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+
+        int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + flashingInterval + emergeInterval;
+        roundTimer.set(roundInterval);
       }
-
-      isRippling = true;
-      ripplingTimer.set(ripplingInterval);
-      goSignal = GO;
-      roundActive = true;
-
-      int emergeInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-      emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
-      int aboveInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
-
-      int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + flashingInterval + emergeInterval;
-      roundTimer.set(roundInterval);
     }
   }
 
@@ -222,10 +236,10 @@ void gameLoopGeneric() {
   if (roundActive && emergeTimer.isExpired()) {
     roundActive = false;
     //calculate if I should go above
-    byte popChance = map_m(roundCounter, ROUND_MIN, ROUND_MAX, POP_CHANCE_MIN, POP_CHANCE_MAX);
+    byte popChance = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, POP_CHANCE_MIN, POP_CHANCE_MAX);
     if (rand(100) < popChance) {
       isAbove = true;
-      int fadeTime = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      int fadeTime = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
       aboveTimer.set(fadeTime);
       //set which player is up
       if (playerCount > 1) {//multiplayer
@@ -268,7 +282,7 @@ void gameLoopGeneric() {
         }
       } else {//just ripple it a bit to show we heard you
         isRippling = true;
-        ripplingTimer.set(ripplingInterval);
+        ripplingTimer.set(RIPPLING_INTERVAL);
       }
     }
   }//end button press check
@@ -326,6 +340,83 @@ void deathLoop() {
     }
   }
 
+  setupCheck();
+}
+
+void victoryLoop() {
+  //listen for neighbors in death, because that maybe could happen but probably won't
+  FOREACH_FACE(f) {
+    if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
+      if (getGameState(getLastValueReceivedOnFace(f)) == DEATH) {
+        gameState = DEATH;
+        isSourceOfDeath = false;
+      }
+    }
+  }
+
+  //send or receive waves
+  if (goSignal == INERT) {
+    //listen for our timer to expire to send a wave
+    if (roundTimer.isExpired()) {
+      //START WAVE
+      goSignal = GO;
+      isRippling = true;
+      ripplingTimer.set(RIPPLING_INTERVAL * 2);
+      losingPlayer = rand(playerCount - 1) + 1;
+      roundTimer.set(EMERGE_INTERVAL_MAX + rand(EMERGE_DRIFT));
+    }
+
+    //listen for neighbors in wave mode to do start a wave
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) {
+        if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {
+          //WE ARE WAVING
+          goSignal = GO;
+          roundTimer.set(EMERGE_INTERVAL_MAX + rand(EMERGE_DRIFT));
+          isRippling = true;
+          ripplingTimer.set(RIPPLING_INTERVAL * 2);
+          losingPlayer = getLosingPlayer(getLastValueReceivedOnFace(f));
+          roundTimer.set(EMERGE_INTERVAL_MAX + rand(EMERGE_DRIFT));
+        }
+      }
+    }
+  }
+
+  //resolve goSignal propogation
+  if (goSignal == GO) {//we are going. Do all our neighbors know this?
+    bool canResolve = true;
+
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
+        if (getGoSignal(getLastValueReceivedOnFace(f)) == INERT) {//this neighbor has not been told
+          canResolve = false;
+        }
+      }
+    }
+
+    if (canResolve) {
+      goSignal = RESOLVING;
+    }
+  } else if (goSignal == RESOLVING) {
+    bool canInert = true;
+
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
+        if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//this neighbor still has work to do
+          canInert = false;
+        }
+      }
+    }
+
+    if (canInert) {
+      goSignal = INERT;
+    }
+  }
+
+  setupCheck();
+}
+
+void setupCheck() {
   //listen for double clicks to go back to setup
   if (buttonDoubleClicked()) {
     gameState = SETUP;
@@ -347,8 +438,9 @@ void deathLoop() {
 void resetAllVariables() {
   //RESET ALL GAME VARIABLES
   goSignal = INERT;
-  roundCounter = 0;
+  difficultyLevel = 0;
   roundActive = false;
+  roundCounter = 0;
   currentPlayerMole = 0;
   losingPlayer = 0;
   strikes = 0;
@@ -386,7 +478,7 @@ void gameDisplayLoop() {
     byte currentSaturation = 255 - map_m(flashingTimer.getRemaining(), 0, flashingInterval, 0, 255);
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
-    long currentInterval = map_m(roundCounter, ROUND_MIN, ROUND_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    long currentInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
     long currentTime = aboveTimer.getRemaining();
     byte brightnessSubtraction = map_m(currentTime, currentInterval, 0, 0, 255);
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
@@ -419,7 +511,6 @@ void gameDisplayLoop() {
 }
 
 void deathDisplayLoop() {
-  //ok, so here we do this interesting little trick
   long currentAnimationPosition = (millis() - timeOfDeath) % (DEATH_ANIMATION_INTERVAL * 2);
   byte animationValue;
   if (currentAnimationPosition < DEATH_ANIMATION_INTERVAL) { //we are in the down swing (255 >> 0)
@@ -432,6 +523,29 @@ void deathDisplayLoop() {
     setColor(makeColorHSB(playerHues[losingPlayer - 1], animationValue, 255));
   } else {
     setColor(makeColorHSB(playerHues[losingPlayer - 1], 255, animationValue));
+  }
+}
+
+void victoryDisplayLoop() {
+  if (isRippling) {//cool flashy thing
+    
+    byte animationValue;
+
+    if (ripplingTimer.getRemaining() > RIPPLING_INTERVAL) { //the part where it goes from player color to white
+      animationValue = map_m(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 0, 255);
+      setColor(makeColorHSB(playerHues[losingPlayer - 1], animationValue, 255));
+    } else {//the part where it goes from white to grass
+      animationValue = map_m(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 255, 0);
+      setColor(makeColorHSB(grassHue, animationValue, 255));
+    }
+
+  } else {//just grass
+    setColor(makeColorHSB(grassHue, 255, 255));
+  }
+
+  //resolve ripple timer
+  if (ripplingTimer.isExpired()) {
+    isRippling = false;
   }
 }
 
