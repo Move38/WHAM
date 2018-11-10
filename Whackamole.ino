@@ -7,12 +7,15 @@ byte grassHue = 70;
 byte difficultyLevel = 0;
 
 #define VICTORY_ROUND_COUNT 25
+enum goVictorySignals {INERT, WAVE, SETTLE};//used in game state
+byte goVictorySignal = INERT;
 byte roundCounter = 0;
 Timer roundTimer;
 bool roundActive = false;
+byte lifeSignal = 0;
 
-enum goSignals {INERT, GO, RESOLVING};//used in game state to signal round begin from the master mole
-byte goSignal = INERT;
+enum goStrikeSignals {INERT0, INERT1, INERT2, GO, RESOLVING};//used in game state
+byte goStrikeSignal = INERT0;
 bool isRippling = false;
 #define RIPPLING_INTERVAL 500
 Timer ripplingTimer;
@@ -22,25 +25,25 @@ byte currentPlayerMole = 1;
 byte playerMoleUsage[3] = {0, 0, 0};
 byte playerHues[3] = {0, 42, 212};
 
-#define EMERGE_INTERVAL_MAX 1500
-#define EMERGE_INTERVAL_MIN 750
-#define EMERGE_DRIFT 1000
+#define EMERGE_INTERVAL_MAX 2000
+#define EMERGE_INTERVAL_MIN 1000
+#define EMERGE_DRIFT 100
 Timer emergeTimer;//triggered when the GO signal is received, interval shrinks as difficultyLevel increases
 
 #define POP_CHANCE_MAX 80
 #define POP_CHANCE_MIN 50
 
 bool isAbove = false;
-#define ABOVE_INTERVAL_MAX 2000
-#define ABOVE_INTERVAL_MIN 1000
+#define ABOVE_INTERVAL_MAX 3500
+#define ABOVE_INTERVAL_MIN 2000
 Timer aboveTimer;
 
 bool isFlashing = false;
-int flashingInterval = 500;
+#define FLASHING_INTERVAL 500
 Timer flashingTimer;
 
 bool isStriking = false;
-byte strikingInterval = 200;
+#define STRIKING_INTERVAL 200
 Timer strikingTimer;
 byte strikes = 0;//communicated in game mode, incremented which each strike
 Color strikeColors[3] = {YELLOW, ORANGE, RED};
@@ -87,13 +90,13 @@ void loop() {
       sendData = (gameState << 4) + (playerCount);
       break;
     case GAME:
-      sendData = (gameState << 4) + (goSignal << 2) + (strikes);
+      sendData = (gameState << 4) + (goStrikeSignal << 1) + (lifeSignal);
       break;
     case DEATH:
       sendData = (gameState << 4) + (losingPlayer);
       break;
     case VICTORY:
-      sendData = (gameState << 4) + (goSignal << 2) + (losingPlayer);
+      sendData = (gameState << 4) + (goVictorySignal << 2) + (losingPlayer);
   }
   setValueSentOnAllFaces(sendData);
 }
@@ -128,13 +131,13 @@ void setupLoop() {
     }
   }
 
-  //listen for double-clicks to move into game mode and become master
+  //listen for double-clicks to move into game mode
   if (buttonDoubleClicked()) {
     gameState = GAME;
     roundActive = false;
     roundTimer.set(EMERGE_INTERVAL_MAX);
     isFlashing = true;
-    flashingTimer.set(flashingInterval);
+    flashingTimer.set(FLASHING_INTERVAL);
   }
 
   //listen for neighbors in game mode to move to game mode myself and become receiver
@@ -146,7 +149,7 @@ void setupLoop() {
         roundActive = false;
         roundTimer.set(EMERGE_INTERVAL_MAX);
         isFlashing = true;
-        flashingTimer.set(flashingInterval);
+        flashingTimer.set(FLASHING_INTERVAL);
       }
     }
   }
@@ -162,7 +165,7 @@ void gameLoop() {
     FOREACH_FACE(f) {
       if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
         if (getGameState(getLastValueReceivedOnFace(f)) == GAME) { //a trusted neighbor
-          if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//telling us to go
+          if (getGoStrikeSignal(getLastValueReceivedOnFace(f)) == GO) {//telling us to go
             newRoundInitiated = true;
           }
         }
@@ -186,58 +189,88 @@ void gameLoop() {
           difficultyLevel++;
         }
 
+        //we also need to declare out intention to go up
+        lifeSignal = rand(1);//using this in place of real stuff for a moment
+
         isRippling = true;
         ripplingTimer.set(RIPPLING_INTERVAL);
-        goSignal = GO;
+        goStrikeSignal = GO;
         roundActive = true;
 
         int emergeInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
         emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
         int aboveInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
 
-        int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + flashingInterval + emergeInterval;
+        int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
         roundTimer.set(roundInterval);
       }
     }
   }
 
-  //resolve goSignal propogation
-  if (goSignal == GO) {//we are going. Do all our neighbors know this?
+  //resolve goStrikeSignal propogation
+  if (goStrikeSignal == GO) {//we are going. Do all our neighbors know this?
     bool canResolve = true;
 
     FOREACH_FACE(f) {
       if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
-        if (getGoSignal(getLastValueReceivedOnFace(f)) == INERT) {//this neighbor has not been told
+        if (isGoStrikeInert(getGoStrikeSignal(getLastValueReceivedOnFace(f)))) {//this neighbor has not been told
           canResolve = false;
         }
       }
     }
 
     if (canResolve) {
-      goSignal = RESOLVING;
+      goStrikeSignal = RESOLVING;
     }
-  } else if (goSignal == RESOLVING) {
+  } else if (goStrikeSignal == RESOLVING) {
     bool canInert = true;
 
     FOREACH_FACE(f) {
       if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
-        if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//this neighbor still has work to do
+        if (getGoStrikeSignal(getLastValueReceivedOnFace(f)) == GO) {//this neighbor still has work to do
           canInert = false;
         }
       }
     }
 
     if (canInert) {
-      goSignal = INERT;
+      switch (strikes) {
+        case 0:
+          goStrikeSignal = INERT0;
+          break;
+        case 1:
+          goStrikeSignal = INERT1;
+          break;
+        case 2:
+          goStrikeSignal = INERT2;
+          break;
+      }
+    }
+  }
+
+  //PLAY THE GAME OF LIFE
+  if (isGoStrikeInert(goStrikeSignal) && roundActive) {
+    byte neighborsUp = 0;
+    FOREACH_FACE(f) {
+      if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
+        if (getLifeSignal(getLastValueReceivedOnFace(f)) == 1) {
+          neighborsUp++;
+        }
+      }
+    }
+
+    if (neighborsUp == 0) {//too few up neighbors. ARISE!
+      lifeSignal = 1;
+    } else if (neighborsUp > 3) {//too many neighbors. DESCEND!
+      lifeSignal = 0;
     }
   }
 
   //listen for my emerge timer to expire so I can go above
   if (roundActive && emergeTimer.isExpired()) {
     roundActive = false;
-    //calculate if I should go above
-    byte popChance = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, POP_CHANCE_MIN, POP_CHANCE_MAX);
-    if (rand(100) < popChance) {
+
+    if (lifeSignal == 1) {
       isAbove = true;
       int fadeTime = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
       aboveTimer.set(fadeTime);
@@ -260,6 +293,7 @@ void gameLoop() {
         currentPlayerMole = 1;
       }
     }
+
   }
 
   //listen for button presses
@@ -267,36 +301,65 @@ void gameLoop() {
     if (isAbove) { //there is a mole here
       isAbove = false;//kill the mole
       isFlashing = true;//start the flash
-      flashingTimer.set(flashingInterval);
+      flashingTimer.set(FLASHING_INTERVAL);
       roundActive = false;
     } else {//there is no mole here
       if (playerCount == 1) {//single player, get a strike
         strikes++;
-        strikingTimer.set(strikingInterval);
+        //we need to check if we are in an inert state and update that
+        if (isGoStrikeInert(goStrikeSignal)) { //update our INERT type
+          switch (strikes) {
+            case 0:
+              goStrikeSignal = INERT0;
+              break;
+            case 1:
+              goStrikeSignal = INERT1;
+              break;
+            case 2:
+              goStrikeSignal = INERT2;
+              break;
+          }
+        }
+        strikingTimer.set(STRIKING_INTERVAL);
         isStriking = true;
         if (strikes == 3) {
           gameState = DEATH;
           isSourceOfDeath = true;
           losingPlayer = 1;
-          timeOfDeath = millis();
         }
       } else {//just ripple it a bit to show we heard you
         isRippling = true;
         ripplingTimer.set(RIPPLING_INTERVAL);
       }
+
     }
   }//end button press check
 
   //listen for strikes from neighbors
   FOREACH_FACE(f) {
     if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
-      byte neighborStrikes = getStrikes(getLastValueReceivedOnFace(f));
       byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
       if (neighborGameState == GAME) { //this neighbor is in game state, so we can trust their communication
-        if (neighborStrikes > strikes) { //that neighbor is reporting more strikes than me. Take that number
-          strikes = neighborStrikes;
-          isStriking = true;
-          strikingTimer.set(strikingInterval);
+        if (isGoStrikeInert(getGoStrikeSignal(getLastValueReceivedOnFace(f)))) {//this is an inert neighbror, they communicating
+          byte neighborStrikes = getStrikes(getLastValueReceivedOnFace(f));
+          if (neighborStrikes > strikes) { //that neighbor is reporting more strikes than me. Take that number
+            strikes = neighborStrikes;
+            if (isGoStrikeInert(goStrikeSignal)) { //update our INERT type
+              switch (strikes) {
+                case 0:
+                  goStrikeSignal = INERT0;
+                  break;
+                case 1:
+                  goStrikeSignal = INERT1;
+                  break;
+                case 2:
+                  goStrikeSignal = INERT2;
+                  break;
+              }
+            }
+            isStriking = true;
+            strikingTimer.set(STRIKING_INTERVAL);
+          }
         }
       }
     }
@@ -355,11 +418,11 @@ void victoryLoop() {
   }
 
   //send or receive waves
-  if (goSignal == INERT) {
+  if (goVictorySignal == INERT) {
     //listen for our timer to expire to send a wave
     if (roundTimer.isExpired()) {
       //START WAVE
-      goSignal = GO;
+      goVictorySignal = WAVE;
       isRippling = true;
       ripplingTimer.set(RIPPLING_INTERVAL * 2);
       losingPlayer = rand(playerCount - 1) + 1;
@@ -369,9 +432,9 @@ void victoryLoop() {
     //listen for neighbors in wave mode to do start a wave
     FOREACH_FACE(f) {
       if (!isValueReceivedOnFaceExpired(f)) {
-        if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {
+        if (getGoVictorySignal(getLastValueReceivedOnFace(f)) == WAVE) {
           //WE ARE WAVING
-          goSignal = GO;
+          goVictorySignal = WAVE;
           roundTimer.set(EMERGE_INTERVAL_MAX + rand(EMERGE_DRIFT));
           isRippling = true;
           ripplingTimer.set(RIPPLING_INTERVAL * 2);
@@ -383,33 +446,33 @@ void victoryLoop() {
   }
 
   //resolve goSignal propogation
-  if (goSignal == GO) {//we are going. Do all our neighbors know this?
-    bool canResolve = true;
+  if (goVictorySignal == WAVE) {//we are going. Do all our neighbors know this?
+    bool canSettle = true;
 
     FOREACH_FACE(f) {
       if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
-        if (getGoSignal(getLastValueReceivedOnFace(f)) == INERT) {//this neighbor has not been told
-          canResolve = false;
+        if (getGoVictorySignal(getLastValueReceivedOnFace(f)) == INERT) {//this neighbor has not been told
+          canSettle = false;
         }
       }
     }
 
-    if (canResolve) {
-      goSignal = RESOLVING;
+    if (canSettle) {
+      goVictorySignal = SETTLE;
     }
-  } else if (goSignal == RESOLVING) {
+  } else if (goVictorySignal == SETTLE) {
     bool canInert = true;
 
     FOREACH_FACE(f) {
       if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
-        if (getGoSignal(getLastValueReceivedOnFace(f)) == GO) {//this neighbor still has work to do
+        if (getGoVictorySignal(getLastValueReceivedOnFace(f)) == WAVE) {//this neighbor still has work to do
           canInert = false;
         }
       }
     }
 
     if (canInert) {
-      goSignal = INERT;
+      goVictorySignal = INERT;
     }
   }
 
@@ -437,13 +500,15 @@ void setupCheck() {
 
 void resetAllVariables() {
   //RESET ALL GAME VARIABLES
-  goSignal = INERT;
+  goStrikeSignal = INERT0;
+  goVictorySignal = INERT;
   difficultyLevel = 0;
   roundActive = false;
   roundCounter = 0;
   currentPlayerMole = 0;
   losingPlayer = 0;
   strikes = 0;
+  lifeSignal = 0;
   isSourceOfDeath = false;
   isAbove = false;
   isFlashing = false;
@@ -475,7 +540,7 @@ void setupDisplayLoop() {
 void gameDisplayLoop() {
   //do each animation
   if (isFlashing) {//fade from white to green based on flashingTimer
-    byte currentSaturation = 255 - map_m(flashingTimer.getRemaining(), 0, flashingInterval, 0, 255);
+    byte currentSaturation = 255 - map_m(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 0, 255);
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
     long currentInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
@@ -528,7 +593,7 @@ void deathDisplayLoop() {
 
 void victoryDisplayLoop() {
   if (isRippling) {//cool flashy thing
-    
+
     byte animationValue;
 
     if (ripplingTimer.getRemaining() > RIPPLING_INTERVAL) { //the part where it goes from player color to white
@@ -561,12 +626,42 @@ byte getPlayerCount(byte data) {//5th and 6th bit
   return (data & 3);
 }
 
-byte getGoSignal(byte data) {//3rd and 4th bit
-  return ((data >> 2) & 3);
+byte getGoStrikeSignal(byte data) {
+  return ((data >> 1) & 7);
 }
 
-byte getStrikes(byte data) {//5th and 6th bit
-  return (data & 3);
+bool isGoStrikeInert (byte data) {//is this neighbor in an inert state?
+  if (data == INERT0 || data == INERT1 || data == INERT2) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+byte getStrikes(byte data) {//returns a number of strikes
+  byte s = getGoStrikeSignal(data);
+  switch (s) {
+    case INERT0:
+      return 0;
+      break;
+    case INERT1:
+      return 1;
+      break;
+    case INERT2:
+      return 2;
+      break;
+    default:
+      return 0;
+      break;
+  }
+}
+
+byte getLifeSignal(byte data) {//6th bit
+  return (data & 1);
+}
+
+byte getGoVictorySignal(byte data) {//3rd and 4th bit
+  return ((data >> 2) & 3);
 }
 
 byte getLosingPlayer(byte data) {//5th and 6th bit
