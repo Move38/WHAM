@@ -183,14 +183,14 @@ void gameLoop() {
       if (roundCounter > VICTORY_ROUND_COUNT) {//GAME OVER: VICTORY
         gameState = VICTORY;
         int emergeInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-        roundTimer.set(emergeInterval + rand(EMERGE_DRIFT));
+        roundTimer.set(emergeInterval + random(EMERGE_DRIFT));
       } else {//GAME IS STILL ON
         if (difficultyLevel < DIFFICULTY_MAX) {
           difficultyLevel++;
         }
 
         //we also need to declare out intention to go up
-        lifeSignal = rand(1);//using this in place of real stuff for a moment
+        lifeSignal = random(1);//using this in place of real stuff for a moment
 
         isRippling = true;
         ripplingTimer.set(RIPPLING_INTERVAL);
@@ -198,7 +198,7 @@ void gameLoop() {
         roundActive = true;
 
         int emergeInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-        emergeTimer.set(emergeInterval + rand(EMERGE_DRIFT));
+        emergeTimer.set(emergeInterval + random(EMERGE_DRIFT));
         int aboveInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
 
         int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
@@ -278,7 +278,7 @@ void gameLoop() {
       if (playerCount > 1) {//multiplayer
         //choose a mole that has been used less than twice since the last reset
         do {
-          currentPlayerMole = rand(playerCount - 1) + 1;
+          currentPlayerMole = random(playerCount - 1) + 1;
         } while (playerMoleUsage[currentPlayerMole - 1] == 2);
         //we found one! increment that placement
         playerMoleUsage[currentPlayerMole - 1] += 1;
@@ -425,8 +425,8 @@ void victoryLoop() {
       goVictorySignal = WAVE;
       isRippling = true;
       ripplingTimer.set(RIPPLING_INTERVAL * 2);
-      losingPlayer = rand(playerCount - 1) + 1;
-      roundTimer.set(EMERGE_INTERVAL_MAX + rand(EMERGE_DRIFT));
+      losingPlayer = random(playerCount - 1) + 1;
+      roundTimer.set(EMERGE_INTERVAL_MAX + random(EMERGE_DRIFT));
     }
 
     //listen for neighbors in wave mode to do start a wave
@@ -435,11 +435,11 @@ void victoryLoop() {
         if (getGoVictorySignal(getLastValueReceivedOnFace(f)) == WAVE) {
           //WE ARE WAVING
           goVictorySignal = WAVE;
-          roundTimer.set(EMERGE_INTERVAL_MAX + rand(EMERGE_DRIFT));
+          roundTimer.set(EMERGE_INTERVAL_MAX + random(EMERGE_DRIFT));
           isRippling = true;
           ripplingTimer.set(RIPPLING_INTERVAL * 2);
           losingPlayer = getLosingPlayer(getLastValueReceivedOnFace(f));
-          roundTimer.set(EMERGE_INTERVAL_MAX + rand(EMERGE_DRIFT));
+          roundTimer.set(EMERGE_INTERVAL_MAX + random(EMERGE_DRIFT));
         }
       }
     }
@@ -556,8 +556,8 @@ void gameDisplayLoop() {
     setColor(strikeColors[strikes - 1]);
   } else if (isRippling) {//randomize green hue for a moment
     FOREACH_FACE(f) {
-      setColorOnFace(makeColorHSB(grassHue, 255, rand(50) + 205), f);
-      //setColorOnFace(makeColorHSB(grassHue + rand(20), 255, 255), f);
+      setColorOnFace(makeColorHSB(grassHue, 255, random(50) + 205), f);
+      //setColorOnFace(makeColorHSB(grassHue + random(20), 255, 255), f);
     }
   } else {//just be green
     setColor(makeColorHSB(grassHue, 255, 255));
