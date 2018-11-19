@@ -529,11 +529,11 @@ void setupDisplayLoop() {
   setColorOnFace(makeColorHSB(playerHues[0], 255, 255), 0); //we always have player 1
 
   if (playerCount >= 2) {//do we have player 2?
-    setColorOnFace(makeColorHSB(playerHues[1], 255, 255), 2);
+    setColorOnFace(makeColorHSB(playerHues[1], 255, 255), 1);
   }
 
   if (playerCount == 3) {//do we have player 3?
-    setColorOnFace(makeColorHSB(playerHues[2], 255, 255), 4);
+    setColorOnFace(makeColorHSB(playerHues[2], 255, 255), 2);
   }
 }
 
