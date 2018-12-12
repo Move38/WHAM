@@ -182,7 +182,7 @@ void gameLoop() {
       roundCounter++;
       if (roundCounter > VICTORY_ROUND_COUNT) {//GAME OVER: VICTORY
         gameState = VICTORY;
-        int emergeInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
         roundTimer.set(emergeInterval + random(EMERGE_DRIFT));
       } else {//GAME IS STILL ON
         if (difficultyLevel < DIFFICULTY_MAX) {
@@ -197,11 +197,11 @@ void gameLoop() {
         goStrikeSignal = GO;
         roundActive = true;
 
-        int emergeInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
         emergeTimer.set(emergeInterval + random(EMERGE_DRIFT));
-        int aboveInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+        word aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
 
-        int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
+        word roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
         roundTimer.set(roundInterval);
       }
     }
@@ -272,7 +272,7 @@ void gameLoop() {
 
     if (lifeSignal == 1) {
       isAbove = true;
-      int fadeTime = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
       aboveTimer.set(fadeTime);
       //set which player is up
       if (playerCount > 1) {//multiplayer
@@ -540,12 +540,12 @@ void setupDisplayLoop() {
 void gameDisplayLoop() {
   //do each animation
   if (isFlashing) {//fade from white to green based on flashingTimer
-    byte currentSaturation = 255 - map_m(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 0, 255);
+    byte currentSaturation = 255 - map(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 0, 255);
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
-    long currentInterval = map_m(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    long currentInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
     long currentTime = aboveTimer.getRemaining();
-    byte brightnessSubtraction = map_m(currentTime, currentInterval, 0, 0, 255);
+    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     byte currentBrightness = 255 - brightnessSubtraction;
@@ -579,9 +579,9 @@ void deathDisplayLoop() {
   long currentAnimationPosition = (millis() - timeOfDeath) % (DEATH_ANIMATION_INTERVAL * 2);
   byte animationValue;
   if (currentAnimationPosition < DEATH_ANIMATION_INTERVAL) { //we are in the down swing (255 >> 0)
-    animationValue = map_m (currentAnimationPosition, 0, DEATH_ANIMATION_INTERVAL, 255, 0);
+    animationValue = map(currentAnimationPosition, 0, DEATH_ANIMATION_INTERVAL, 255, 0);
   } else {//we are in the up swing (0 >> 255)
-    animationValue = map_m (currentAnimationPosition - DEATH_ANIMATION_INTERVAL, 0, DEATH_ANIMATION_INTERVAL, 0, 255);
+    animationValue = map(currentAnimationPosition - DEATH_ANIMATION_INTERVAL, 0, DEATH_ANIMATION_INTERVAL, 0, 255);
   }
 
   if (isSourceOfDeath) {
@@ -597,10 +597,10 @@ void victoryDisplayLoop() {
     byte animationValue;
 
     if (ripplingTimer.getRemaining() > RIPPLING_INTERVAL) { //the part where it goes from player color to white
-      animationValue = map_m(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 0, 255);
+      animationValue = map(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 0, 255);
       setColor(makeColorHSB(playerHues[losingPlayer - 1], animationValue, 255));
     } else {//the part where it goes from white to grass
-      animationValue = map_m(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 255, 0);
+      animationValue = map(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 255, 0);
       setColor(makeColorHSB(grassHue, animationValue, 255));
     }
 
@@ -666,13 +666,4 @@ byte getGoVictorySignal(byte data) {//3rd and 4th bit
 
 byte getLosingPlayer(byte data) {//5th and 6th bit
   return (data & 3);
-}
-
-///////////////
-//CONVENIENCE//
-///////////////
-
-long map_m(long x, long in_min, long in_max, long out_min, long out_max)
-{
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
