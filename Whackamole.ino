@@ -179,8 +179,8 @@ void gameLoop() {
       roundCounter++;
       if (roundCounter > VICTORY_ROUND_COUNT) {//GAME OVER: VICTORY
         gameState = VICTORY;
-        int emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-        int driftVal = (EMERGE_DRIFT / 3) * random(3);
+        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word driftVal = (EMERGE_DRIFT / 3) * random(3);
         roundTimer.set(emergeInterval + driftVal);
       } else {//GAME IS STILL ON
         if (difficultyLevel < DIFFICULTY_MAX) {
@@ -195,11 +195,11 @@ void gameLoop() {
         goStrikeSignal = GO;
         roundActive = true;
 
-        int emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
         emergeTimer.set(emergeInterval + random(EMERGE_DRIFT));
-        int aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+        word aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
 
-        int roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
+        word roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
         roundTimer.set(roundInterval);
       }
     }
@@ -270,7 +270,7 @@ void gameLoop() {
 
     if (lifeSignal == 1) {
       isAbove = true;
-      int fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
       aboveTimer.set(fadeTime);
       //set which player is up
       if (playerCount > 1) {//multiplayer
