@@ -179,7 +179,8 @@ void gameLoop() {
       roundCounter++;
       if (roundCounter > VICTORY_ROUND_COUNT) {//GAME OVER: VICTORY
         gameState = VICTORY;
-        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        //        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word emergeInterval = EMERGE_INTERVAL_MAX - ((difficultyLevel * (EMERGE_INTERVAL_MAX - EMERGE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
         word driftVal = (EMERGE_DRIFT / 3) * random(3);
         roundTimer.set(emergeInterval + driftVal);
       } else {//GAME IS STILL ON
@@ -195,9 +196,11 @@ void gameLoop() {
         goStrikeSignal = GO;
         roundActive = true;
 
-        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        //        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word emergeInterval = EMERGE_INTERVAL_MAX - ((difficultyLevel * (EMERGE_INTERVAL_MAX - EMERGE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
         emergeTimer.set(emergeInterval + random(EMERGE_DRIFT));
-        word aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+        //        word aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+        word aboveInterval = ABOVE_INTERVAL_MAX - ((difficultyLevel * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
 
         word roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
         roundTimer.set(roundInterval);
@@ -270,7 +273,8 @@ void gameLoop() {
 
     if (lifeSignal == 1) {
       isAbove = true;
-      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      //      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      word fadeTime = ABOVE_INTERVAL_MAX - ((difficultyLevel * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
       aboveTimer.set(fadeTime);
       //set which player is up
       if (playerCount > 1) {//multiplayer
@@ -488,12 +492,15 @@ void setupDisplayLoop() {
 void gameDisplayLoop() {
   //do each animation
   if (isFlashing) {//fade from white to green based on flashingTimer
-    byte currentSaturation = 255 - map(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 0, 255);
+    //    byte currentSaturation = map(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 255, 0);
+    byte currentSaturation = 255 - ((255 * flashingTimer.getRemaining()) / FLASHING_INTERVAL);
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
-    long currentInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    //    long currentInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    long currentInterval = ABOVE_INTERVAL_MIN + ((difficultyLevel * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN) ) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
     long currentTime = aboveTimer.getRemaining();
-    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
+//    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
+    byte brightnessSubtraction = 255 - ((255*currentTime) / currentInterval);
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     byte currentBrightness = 255 - brightnessSubtraction;
@@ -527,9 +534,11 @@ void deathDisplayLoop() {
   long currentAnimationPosition = (millis() - timeOfDeath) % (DEATH_ANIMATION_INTERVAL * 2);
   byte animationValue;
   if (currentAnimationPosition < DEATH_ANIMATION_INTERVAL) { //we are in the down swing (255 >> 0)
-    animationValue = map(currentAnimationPosition, 0, DEATH_ANIMATION_INTERVAL, 255, 0);
+//    animationValue = map(currentAnimationPosition, 0, DEATH_ANIMATION_INTERVAL, 255, 0);
+    animationValue = 255 - ((255 * currentAnimationPosition) / DEATH_ANIMATION_INTERVAL); 
   } else {//we are in the up swing (0 >> 255)
-    animationValue = map(currentAnimationPosition - DEATH_ANIMATION_INTERVAL, 0, DEATH_ANIMATION_INTERVAL, 0, 255);
+//    animationValue = map(currentAnimationPosition - DEATH_ANIMATION_INTERVAL, 0, DEATH_ANIMATION_INTERVAL, 0, 255);
+    animationValue = ((255 * (currentAnimationPosition - DEATH_ANIMATION_INTERVAL)) / DEATH_ANIMATION_INTERVAL); 
   }
 
   if (isSourceOfDeath) {
