@@ -1,12 +1,27 @@
+/*  
+ *  WHAM! by Move38
+ *  
+ *  last updated: 12.27.2018
+ *  by Daniel King, Jonathan Bobrow
+ * 
+ *  --------------------
+ *  Blinks: A board game with a mind of its own
+ *  Brought to life via Kickstarter 2018
+ *  
+ *  @madewithblinks
+ *  www.move38.com
+ *  --------------------
+ */
+
 enum gameStates {SETUP, GAME, DEATH, VICTORY};//cycles through the game
 byte gameState = SETUP;
 byte grassHue = 70;
 
 #define DIFFICULTY_MIN 1 //starting round
-#define DIFFICULTY_MAX 20 //final difficulty level, though the game continues
+#define DIFFICULTY_MAX 15 //final difficulty level, though the game continues
 byte difficultyLevel = 0;
 
-#define VICTORY_ROUND_COUNT 25
+#define VICTORY_ROUND_COUNT 30
 enum goVictorySignals {INERT, WAVE, SETTLE};//used in game state
 byte goVictorySignal = INERT;
 byte roundCounter = 0;
@@ -26,16 +41,13 @@ byte playerMoleUsage[3] = {0, 0, 0};
 byte playerHues[3] = {0, 42, 212};
 
 #define EMERGE_INTERVAL_MAX 2000
-#define EMERGE_INTERVAL_MIN 1000
-#define EMERGE_DRIFT 100
+#define EMERGE_INTERVAL_MIN 500
+#define EMERGE_DRIFT 200
 Timer emergeTimer;//triggered when the GO signal is received, interval shrinks as difficultyLevel increases
 
-#define POP_CHANCE_MAX 80
-#define POP_CHANCE_MIN 50
-
 bool isAbove = false;
-#define ABOVE_INTERVAL_MAX 3500
-#define ABOVE_INTERVAL_MIN 2000
+#define ABOVE_INTERVAL_MAX 3000
+#define ABOVE_INTERVAL_MIN 1500
 Timer aboveTimer;
 
 bool isFlashing = false;
@@ -182,8 +194,10 @@ void gameLoop() {
       roundCounter++;
       if (roundCounter > VICTORY_ROUND_COUNT) {//GAME OVER: VICTORY
         gameState = VICTORY;
-        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-        roundTimer.set(emergeInterval + random(EMERGE_DRIFT));
+        //        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word emergeInterval = EMERGE_INTERVAL_MAX - ((difficultyLevel * (EMERGE_INTERVAL_MAX - EMERGE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
+        word driftVal = (EMERGE_DRIFT / 3) * random(3);
+        roundTimer.set(emergeInterval + driftVal);
       } else {//GAME IS STILL ON
         if (difficultyLevel < DIFFICULTY_MAX) {
           difficultyLevel++;
@@ -197,9 +211,11 @@ void gameLoop() {
         goStrikeSignal = GO;
         roundActive = true;
 
-        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        //        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
+        word emergeInterval = EMERGE_INTERVAL_MAX - (((difficultyLevel-DIFFICULTY_MIN) * (EMERGE_INTERVAL_MAX - EMERGE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
         emergeTimer.set(emergeInterval + random(EMERGE_DRIFT));
-        word aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+        //        word aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+        word aboveInterval = ABOVE_INTERVAL_MAX - (((difficultyLevel-DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
 
         word roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
         roundTimer.set(roundInterval);
@@ -272,7 +288,8 @@ void gameLoop() {
 
     if (lifeSignal == 1) {
       isAbove = true;
-      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      //      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+      word fadeTime = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
       aboveTimer.set(fadeTime);
       //set which player is up
       if (playerCount > 1) {//multiplayer
@@ -417,63 +434,13 @@ void victoryLoop() {
     }
   }
 
-  //send or receive waves
-  if (goVictorySignal == INERT) {
-    //listen for our timer to expire to send a wave
-    if (roundTimer.isExpired()) {
-      //START WAVE
-      goVictorySignal = WAVE;
-      isRippling = true;
-      ripplingTimer.set(RIPPLING_INTERVAL * 2);
-      losingPlayer = random(playerCount - 1) + 1;
-      roundTimer.set(EMERGE_INTERVAL_MAX + random(EMERGE_DRIFT));
-    }
+  //randomly flash
+  if (emergeTimer.isExpired()) {
+    isFlashing = true;
+    flashingTimer.set(FLASHING_INTERVAL / 2);
 
-    //listen for neighbors in wave mode to do start a wave
-    FOREACH_FACE(f) {
-      if (!isValueReceivedOnFaceExpired(f)) {
-        if (getGoVictorySignal(getLastValueReceivedOnFace(f)) == WAVE) {
-          //WE ARE WAVING
-          goVictorySignal = WAVE;
-          roundTimer.set(EMERGE_INTERVAL_MAX + random(EMERGE_DRIFT));
-          isRippling = true;
-          ripplingTimer.set(RIPPLING_INTERVAL * 2);
-          losingPlayer = getLosingPlayer(getLastValueReceivedOnFace(f));
-          roundTimer.set(EMERGE_INTERVAL_MAX + random(EMERGE_DRIFT));
-        }
-      }
-    }
-  }
-
-  //resolve goSignal propogation
-  if (goVictorySignal == WAVE) {//we are going. Do all our neighbors know this?
-    bool canSettle = true;
-
-    FOREACH_FACE(f) {
-      if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
-        if (getGoVictorySignal(getLastValueReceivedOnFace(f)) == INERT) {//this neighbor has not been told
-          canSettle = false;
-        }
-      }
-    }
-
-    if (canSettle) {
-      goVictorySignal = SETTLE;
-    }
-  } else if (goVictorySignal == SETTLE) {
-    bool canInert = true;
-
-    FOREACH_FACE(f) {
-      if (!isValueReceivedOnFaceExpired(f)) {//neighbor!
-        if (getGoVictorySignal(getLastValueReceivedOnFace(f)) == WAVE) {//this neighbor still has work to do
-          canInert = false;
-        }
-      }
-    }
-
-    if (canInert) {
-      goVictorySignal = INERT;
-    }
+    //reset the timer
+    emergeTimer.set((FLASHING_INTERVAL / 2) + random(FLASHING_INTERVAL / 2));
   }
 
   setupCheck();
@@ -540,12 +507,15 @@ void setupDisplayLoop() {
 void gameDisplayLoop() {
   //do each animation
   if (isFlashing) {//fade from white to green based on flashingTimer
-    byte currentSaturation = 255 - map(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 0, 255);
+    //    byte currentSaturation = map(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 255, 0);
+    byte currentSaturation = 255 - ((255 * flashingTimer.getRemaining()) / FLASHING_INTERVAL);
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
-    long currentInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    //    long currentInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
+    long currentInterval = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN)* (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN) ) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
     long currentTime = aboveTimer.getRemaining();
-    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
+    //    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
+    byte brightnessSubtraction = 255 - ((255*currentTime) / currentInterval);    
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     byte currentBrightness = 255 - brightnessSubtraction;
@@ -579,9 +549,11 @@ void deathDisplayLoop() {
   long currentAnimationPosition = (millis() - timeOfDeath) % (DEATH_ANIMATION_INTERVAL * 2);
   byte animationValue;
   if (currentAnimationPosition < DEATH_ANIMATION_INTERVAL) { //we are in the down swing (255 >> 0)
-    animationValue = map(currentAnimationPosition, 0, DEATH_ANIMATION_INTERVAL, 255, 0);
+//    animationValue = map(currentAnimationPosition, 0, DEATH_ANIMATION_INTERVAL, 255, 0);
+    animationValue = 255 - ((255 * currentAnimationPosition) / DEATH_ANIMATION_INTERVAL); 
   } else {//we are in the up swing (0 >> 255)
-    animationValue = map(currentAnimationPosition - DEATH_ANIMATION_INTERVAL, 0, DEATH_ANIMATION_INTERVAL, 0, 255);
+//    animationValue = map(currentAnimationPosition - DEATH_ANIMATION_INTERVAL, 0, DEATH_ANIMATION_INTERVAL, 0, 255);
+    animationValue = ((255 * (currentAnimationPosition - DEATH_ANIMATION_INTERVAL)) / DEATH_ANIMATION_INTERVAL); 
   }
 
   if (isSourceOfDeath) {
@@ -592,25 +564,14 @@ void deathDisplayLoop() {
 }
 
 void victoryDisplayLoop() {
-  if (isRippling) {//cool flashy thing
-
-    byte animationValue;
-
-    if (ripplingTimer.getRemaining() > RIPPLING_INTERVAL) { //the part where it goes from player color to white
-      animationValue = map(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 0, 255);
-      setColor(makeColorHSB(playerHues[losingPlayer - 1], animationValue, 255));
-    } else {//the part where it goes from white to grass
-      animationValue = map(ripplingTimer.getRemaining() % RIPPLING_INTERVAL, 0, RIPPLING_INTERVAL, 255, 0);
-      setColor(makeColorHSB(grassHue, animationValue, 255));
-    }
-
-  } else {//just grass
-    setColor(makeColorHSB(grassHue, 255, 255));
+  if (isFlashing) {//fade from white to green based on flashingTimer
+    byte currentSaturation = 255 - map(flashingTimer.getRemaining(), 0, FLASHING_INTERVAL, 0, 255);
+    setColor(makeColorHSB(grassHue, currentSaturation, 255));
   }
 
-  //resolve ripple timer
-  if (ripplingTimer.isExpired()) {
-    isRippling = false;
+  //resolve flashing animation timers
+  if (flashingTimer.isExpired()) {
+    isFlashing = false;
   }
 }
 
