@@ -1,3 +1,18 @@
+/*  
+ *  WHAM! by Move38
+ *  
+ *  last updated: 12.27.2018
+ *  by Daniel King, Jonathan Bobrow
+ * 
+ *  --------------------
+ *  Blinks: A board game with a mind of its own
+ *  Brought to life via Kickstarter 2018
+ *  
+ *  @madewithblinks
+ *  www.move38.com
+ *  --------------------
+ */
+
 enum gameStates {SETUP, GAME, DEATH, VICTORY};//cycles through the game
 byte gameState = SETUP;
 byte grassHue = 70;
@@ -197,10 +212,10 @@ void gameLoop() {
         roundActive = true;
 
         //        word emergeInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, EMERGE_INTERVAL_MAX, EMERGE_INTERVAL_MIN);
-        word emergeInterval = EMERGE_INTERVAL_MAX - ((difficultyLevel * (EMERGE_INTERVAL_MAX - EMERGE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
+        word emergeInterval = EMERGE_INTERVAL_MAX - (((difficultyLevel-DIFFICULTY_MIN) * (EMERGE_INTERVAL_MAX - EMERGE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
         emergeTimer.set(emergeInterval + random(EMERGE_DRIFT));
         //        word aboveInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
-        word aboveInterval = ABOVE_INTERVAL_MAX - ((difficultyLevel * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
+        word aboveInterval = ABOVE_INTERVAL_MAX - (((difficultyLevel-DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
 
         word roundInterval = emergeInterval + EMERGE_DRIFT + aboveInterval + FLASHING_INTERVAL + emergeInterval;
         roundTimer.set(roundInterval);
@@ -274,7 +289,7 @@ void gameLoop() {
     if (lifeSignal == 1) {
       isAbove = true;
       //      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
-      word fadeTime = ABOVE_INTERVAL_MAX - ((difficultyLevel * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
+      word fadeTime = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
       aboveTimer.set(fadeTime);
       //set which player is up
       if (playerCount > 1) {//multiplayer
@@ -497,10 +512,10 @@ void gameDisplayLoop() {
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
     //    long currentInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
-    long currentInterval = ABOVE_INTERVAL_MIN + ((difficultyLevel * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN) ) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
+    long currentInterval = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN)* (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN) ) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
     long currentTime = aboveTimer.getRemaining();
-//    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
-    byte brightnessSubtraction = 255 - ((255*currentTime) / currentInterval);
+    //    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
+    byte brightnessSubtraction = 255 - ((255*currentTime) / currentInterval);    
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     byte currentBrightness = 255 - brightnessSubtraction;
