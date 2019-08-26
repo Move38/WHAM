@@ -496,14 +496,27 @@ void gameDisplayLoop() {
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
     long currentInterval = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN) ) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
-    long currentTime = aboveTimer.getRemaining();
-    byte brightnessSubtraction = 255 - ((255 * currentTime) / currentInterval);
-    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
-    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
-    byte currentBrightness = 255 - brightnessSubtraction;
+    byte currentFullPips = (aboveTimer.getRemaining()) / (currentInterval / 6);//6 >>> 0
+    byte dimmingPipBrightness = map(aboveTimer.getRemaining() - ((currentInterval / 6) * currentFullPips), 0, currentInterval / 6, 0, 255);
     Color currentColor = makeColorHSB(playerHues[challengeSetting - 1], 255, 255);
 
-    setColor(dim(currentColor, currentBrightness));
+    FOREACH_FACE(f) {
+      if (f < currentFullPips) {
+        setColorOnFace(currentColor, f);
+      } else if (f == currentFullPips) {
+        setColorOnFace(dim(currentColor, dimmingPipBrightness), f);
+      } else {
+        setColorOnFace(OFF, f);
+      }
+      //should my face be all the way on?
+    }
+
+    //    long currentTime = aboveTimer.getRemaining();
+    //    byte brightnessSubtraction = 255 - ((255 * currentTime) / currentInterval);
+    //    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
+    //    brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
+    //    byte currentBrightness = 255 - brightnessSubtraction;
+    //    setColor(dim(currentColor, currentBrightness));
 
   } else if (isStriking) {//flash [color] for a moment
     //which color? depends on number of strikes
