@@ -1,17 +1,20 @@
 /*
-    WHAM! by Move38
-
-    last updated: 12.27.2018
-    by Daniel King, Jonathan Bobrow
-
-    --------------------
-    Blinks: A board game with a mind of its own
-    Brought to life via Kickstarter 2018
-
-    @madewithblinks
-    www.move38.com
-    --------------------
-*/
+ *  WHAM!
+ *  by Move38, Inc. 2019
+ *  Lead development by Dan King
+ *  original game by Dan King, Jonathan Bobrow
+ *  based on concept for Whack-A-Mole
+ *
+ *  Rules: https://github.com/Move38/WHAM/blob/master/README.md
+ *
+ *  --------------------
+ *  Blinks by Move38
+ *  Brought to life via Kickstarter 2018
+ *
+ *  @madewithblinks
+ *  www.move38.com
+ *  --------------------
+ */
 
 enum gameStates {SETUP, GAME, DEATH, VICTORY};//cycles through the game
 byte gameState = SETUP;
