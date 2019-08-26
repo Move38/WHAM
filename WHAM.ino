@@ -1,20 +1,20 @@
 /*
- *  WHAM!
- *  by Move38, Inc. 2019
- *  Lead development by Dan King
- *  original game by Dan King, Jonathan Bobrow
- *  based on concept for Whack-A-Mole
- *
- *  Rules: https://github.com/Move38/WHAM/blob/master/README.md
- *
- *  --------------------
- *  Blinks by Move38
- *  Brought to life via Kickstarter 2018
- *
- *  @madewithblinks
- *  www.move38.com
- *  --------------------
- */
+    WHAM!
+    by Move38, Inc. 2019
+    Lead development by Dan King
+    original game by Dan King, Jonathan Bobrow
+    based on concept for Whack-A-Mole
+
+    Rules: https://github.com/Move38/WHAM/blob/master/README.md
+
+    --------------------
+    Blinks by Move38
+    Brought to life via Kickstarter 2018
+
+    @madewithblinks
+    www.move38.com
+    --------------------
+*/
 
 enum gameStates {SETUP, GAME, DEATH, VICTORY};//cycles through the game
 byte gameState = SETUP;
@@ -38,10 +38,9 @@ bool isRippling = false;
 #define RIPPLING_INTERVAL 500
 Timer ripplingTimer;
 
-byte playerCount = 1;//only communicated in setup state, ranges from 1-3
-byte currentPlayerMole = 1;
-byte playerMoleUsage[3] = {0, 0, 0};
+byte challengeSetting = 1;//only communicated in setup state, ranges from 1-3
 byte playerHues[3] = {0, 42, 212};
+#define SETUP_FADE_INTERVAL 1500
 
 #define EMERGE_INTERVAL_MAX 2000
 #define EMERGE_INTERVAL_MIN 500
@@ -102,7 +101,7 @@ void loop() {
   byte sendData;
   switch (gameState) {
     case SETUP:
-      sendData = (gameState << 4) + (playerCount);
+      sendData = (gameState << 4) + (challengeSetting);
       break;
     case GAME:
       sendData = (gameState << 4) + (goStrikeSignal << 1) + (lifeSignal);
@@ -123,24 +122,24 @@ void loop() {
 void setupLoop() {
   //listen for clicks to increment player count
   if (buttonSingleClicked()) {
-    playerCount++;
-    if (playerCount > 3) {
-      playerCount = 1;
+    challengeSetting++;
+    if (challengeSetting > 3) {
+      challengeSetting = 1;
     }
   }
 
   //listen for neighbors with higher player counts and conform
   FOREACH_FACE(f) {
     if (!isValueReceivedOnFaceExpired(f)) {//a neighbor!
-      byte neighborPlayerCount = getPlayerCount(getLastValueReceivedOnFace(f));
+      byte neighborChallengeSetting = getChallengeSetting(getLastValueReceivedOnFace(f));
       byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
       if (neighborGameState == SETUP) { //this neighbor is in our mode, so we can trust his communication
-        if (playerCount == 1 && neighborPlayerCount == 2) {
-          playerCount = 2;
-        } else if (playerCount == 2 && neighborPlayerCount == 3) {
-          playerCount = 3;
-        } else if (playerCount == 3 && neighborPlayerCount == 1) {
-          playerCount = 1;
+        if (challengeSetting == 1 && neighborChallengeSetting == 2) {
+          challengeSetting = 2;
+        } else if (challengeSetting == 2 && neighborChallengeSetting == 3) {
+          challengeSetting = 3;
+        } else if (challengeSetting == 3 && neighborChallengeSetting == 1) {
+          challengeSetting = 1;
         }
       }
     }
@@ -294,24 +293,6 @@ void gameLoop() {
       //      word fadeTime = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
       word fadeTime = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN)) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
       aboveTimer.set(fadeTime);
-      //set which player is up
-      if (playerCount > 1) {//multiplayer
-        //choose a mole that has been used less than twice since the last reset
-        do {
-          currentPlayerMole = random(playerCount - 1) + 1;
-        } while (playerMoleUsage[currentPlayerMole - 1] == 2);
-        //we found one! increment that placement
-        playerMoleUsage[currentPlayerMole - 1] += 1;
-
-        //if all moles have been used twice, do a reset
-        if ((playerMoleUsage[0] + playerMoleUsage[1] + playerMoleUsage[2]) == playerCount * 2) {
-          playerMoleUsage[0] = 0;
-          playerMoleUsage[1] = 0;
-          playerMoleUsage[2] = 0;
-        }
-      } else {//singleplayer
-        currentPlayerMole = 1;
-      }
     }
 
   }
@@ -324,7 +305,7 @@ void gameLoop() {
       flashingTimer.set(FLASHING_INTERVAL);
       roundActive = false;
     } else {//there is no mole here
-      if (playerCount == 1) {//single player, get a strike
+      if (challengeSetting == 1) {//single player, get a strike
         strikes++;
         //we need to check if we are in an inert state and update that
         if (isGoStrikeInert(goStrikeSignal)) { //update our INERT type
@@ -389,7 +370,6 @@ void gameLoop() {
   if (isAbove && aboveTimer.isExpired()) { //my fade timer expired and I haven't been clicked, so...
     gameState = DEATH;
     isSourceOfDeath = true;
-    losingPlayer = currentPlayerMole;
     timeOfDeath = millis();
   }
 
@@ -475,7 +455,6 @@ void resetAllVariables() {
   difficultyLevel = 0;
   roundActive = false;
   roundCounter = 0;
-  currentPlayerMole = 0;
   losingPlayer = 0;
   strikes = 0;
   lifeSignal = 0;
@@ -484,9 +463,6 @@ void resetAllVariables() {
   isFlashing = false;
   isRippling = false;
   isStriking = false;
-  playerMoleUsage[0] = 0;
-  playerMoleUsage[1] = 0;
-  playerMoleUsage[2] = 0;
 }
 
 /////////////////
@@ -495,15 +471,20 @@ void resetAllVariables() {
 
 void setupDisplayLoop() {
   setColor(makeColorHSB(grassHue, 255, 255));
+  byte currentDimness;
 
-  setColorOnFace(makeColorHSB(playerHues[0], 255, 255), 0); //we always have player 1
-
-  if (playerCount >= 2) {//do we have player 2?
-    setColorOnFace(makeColorHSB(playerHues[1], 255, 255), 1);
-  }
-
-  if (playerCount == 3) {//do we have player 3?
-    setColorOnFace(makeColorHSB(playerHues[2], 255, 255), 2);
+  if (challengeSetting == 1) {
+    currentDimness = 255 - map(millis() % SETUP_FADE_INTERVAL, 0, SETUP_FADE_INTERVAL, 0, 255);
+    setColorOnFace(makeColorHSB(playerHues[0], 255, currentDimness), 0);
+  } else if (challengeSetting == 2) {
+    currentDimness = 255 - map(millis() % ((SETUP_FADE_INTERVAL * 7) / 8), 0, ((SETUP_FADE_INTERVAL * 7) / 8), 0, 255);
+    setColorOnFace(makeColorHSB(playerHues[1], 255, currentDimness), 0);
+    setColorOnFace(makeColorHSB(playerHues[1], 255, (currentDimness + 127) % 255), 3);
+  } else if (challengeSetting == 3) {
+    currentDimness = 255 - map(millis() % ((SETUP_FADE_INTERVAL * 3) / 4), 0, ((SETUP_FADE_INTERVAL * 3) / 4), 0, 255);
+    setColorOnFace(makeColorHSB(playerHues[2], 255, currentDimness), 0);
+    setColorOnFace(makeColorHSB(playerHues[2], 255, (currentDimness + 85) % 255), 2);
+    setColorOnFace(makeColorHSB(playerHues[2], 255, (currentDimness + 170) % 255), 4);
   }
 }
 
@@ -514,16 +495,16 @@ void gameDisplayLoop() {
     byte currentSaturation = 255 - ((255 * flashingTimer.getRemaining()) / FLASHING_INTERVAL);
     setColor(makeColorHSB(grassHue, currentSaturation, 255));
   } else if (isAbove) {//fade from [color] to off based on aboveTimer
-    //    long currentInterval = map(difficultyLevel, DIFFICULTY_MIN, DIFFICULTY_MAX, ABOVE_INTERVAL_MAX, ABOVE_INTERVAL_MIN);
     long currentInterval = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN) ) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
     long currentTime = aboveTimer.getRemaining();
-    //    byte brightnessSubtraction = map(currentTime, currentInterval, 0, 0, 255);
     byte brightnessSubtraction = 255 - ((255 * currentTime) / currentInterval);
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     brightnessSubtraction = (brightnessSubtraction * brightnessSubtraction) / 255;
     byte currentBrightness = 255 - brightnessSubtraction;
-    Color currentColor = makeColorHSB(playerHues[currentPlayerMole - 1], 255, 255);
+    Color currentColor = makeColorHSB(playerHues[challengeSetting - 1], 255, 255);
+
     setColor(dim(currentColor, currentBrightness));
+
   } else if (isStriking) {//flash [color] for a moment
     //which color? depends on number of strikes
     setColor(strikeColors[strikes - 1]);
@@ -586,7 +567,7 @@ byte getGameState(byte data) {//1st and 2nd bit
   return (data >> 4);
 }
 
-byte getPlayerCount(byte data) {//5th and 6th bit
+byte getChallengeSetting(byte data) {//5th and 6th bit
   return (data & 3);
 }
 
