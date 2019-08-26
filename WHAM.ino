@@ -38,8 +38,6 @@ bool isRippling = false;
 #define RIPPLING_INTERVAL 500
 Timer ripplingTimer;
 
-byte challengeSetting = 1;//only communicated in setup state, ranges from 1-3
-byte playerHues[3] = {0, 42, 212};
 #define SETUP_FADE_INTERVAL 1500
 
 #define EMERGE_INTERVAL_MAX 2000
@@ -65,7 +63,6 @@ Color strikeColors[3] = {YELLOW, ORANGE, RED};
 bool isSourceOfDeath;
 long timeOfDeath;
 #define DEATH_ANIMATION_INTERVAL 750
-byte losingPlayer = 0;
 
 void setup() {
   // put your setup code here, to run once:
@@ -101,16 +98,16 @@ void loop() {
   byte sendData;
   switch (gameState) {
     case SETUP:
-      sendData = (gameState << 4) + (challengeSetting);
+      sendData = (gameState << 4);
       break;
     case GAME:
       sendData = (gameState << 4) + (goStrikeSignal << 1) + (lifeSignal);
       break;
     case DEATH:
-      sendData = (gameState << 4) + (losingPlayer);
+      sendData = (gameState << 4);
       break;
     case VICTORY:
-      sendData = (gameState << 4) + (goVictorySignal << 2) + (losingPlayer);
+      sendData = (gameState << 4) + (goVictorySignal << 2);
   }
   setValueSentOnAllFaces(sendData);
 }
@@ -120,28 +117,11 @@ void loop() {
 //////////////
 
 void setupLoop() {
-  //listen for clicks to increment player count
-  if (buttonSingleClicked()) {
-    challengeSetting++;
-    if (challengeSetting > 3) {
-      challengeSetting = 1;
-    }
-  }
 
   //listen for neighbors with higher player counts and conform
   FOREACH_FACE(f) {
     if (!isValueReceivedOnFaceExpired(f)) {//a neighbor!
-      byte neighborChallengeSetting = getChallengeSetting(getLastValueReceivedOnFace(f));
       byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
-      if (neighborGameState == SETUP) { //this neighbor is in our mode, so we can trust his communication
-        if (challengeSetting == 1 && neighborChallengeSetting == 2) {
-          challengeSetting = 2;
-        } else if (challengeSetting == 2 && neighborChallengeSetting == 3) {
-          challengeSetting = 3;
-        } else if (challengeSetting == 3 && neighborChallengeSetting == 1) {
-          challengeSetting = 1;
-        }
-      }
     }
   }
 
@@ -305,33 +285,28 @@ void gameLoop() {
       flashingTimer.set(FLASHING_INTERVAL);
       roundActive = false;
     } else {//there is no mole here
-      if (challengeSetting == 1) {//single player, get a strike
-        strikes++;
-        //we need to check if we are in an inert state and update that
-        if (isGoStrikeInert(goStrikeSignal)) { //update our INERT type
-          switch (strikes) {
-            case 0:
-              goStrikeSignal = INERT0;
-              break;
-            case 1:
-              goStrikeSignal = INERT1;
-              break;
-            case 2:
-              goStrikeSignal = INERT2;
-              break;
-          }
+      strikes++;
+      //we need to check if we are in an inert state and update that
+      if (isGoStrikeInert(goStrikeSignal)) { //update our INERT type
+        switch (strikes) {
+          case 0:
+            goStrikeSignal = INERT0;
+            break;
+          case 1:
+            goStrikeSignal = INERT1;
+            break;
+          case 2:
+            goStrikeSignal = INERT2;
+            break;
         }
-        strikingTimer.set(STRIKING_INTERVAL);
-        isStriking = true;
-        if (strikes == 3) {
-          gameState = DEATH;
-          isSourceOfDeath = true;
-          losingPlayer = 1;
-        }
-      } else {//just ripple it a bit to show we heard you
-        isRippling = true;
-        ripplingTimer.set(RIPPLING_INTERVAL);
       }
+      strikingTimer.set(STRIKING_INTERVAL);
+      isStriking = true;
+      if (strikes == 3) {
+        gameState = DEATH;
+        isSourceOfDeath = true;
+      }
+
 
     }
   }//end button press check
@@ -387,22 +362,6 @@ void gameLoop() {
 }
 
 void deathLoop() {
-
-  //listen for losing player
-  if (!isSourceOfDeath && losingPlayer == 0) {//I am not the source of death, and I don't yet know who lost
-    FOREACH_FACE(f) {
-      if (!isValueReceivedOnFaceExpired(f)) { //neighbor!
-        byte neighborLosingPlayer = getLosingPlayer(getLastValueReceivedOnFace(f));
-        byte neighborGameState = getGameState(getLastValueReceivedOnFace(f));
-        if (neighborGameState == DEATH) { //this neighbor is in death state, so we can trust their communication
-          if (neighborLosingPlayer != 0) {//this neighbor seems to know who lost
-            losingPlayer = neighborLosingPlayer;
-          }
-        }
-      }
-    }
-  }
-
   setupCheck();
 }
 
@@ -455,7 +414,6 @@ void resetAllVariables() {
   difficultyLevel = 0;
   roundActive = false;
   roundCounter = 0;
-  losingPlayer = 0;
   strikes = 0;
   lifeSignal = 0;
   isSourceOfDeath = false;
@@ -473,19 +431,8 @@ void setupDisplayLoop() {
   setColor(makeColorHSB(grassHue, 255, 255));
   byte currentDimness;
 
-  if (challengeSetting == 1) {
-    currentDimness = 255 - map(millis() % SETUP_FADE_INTERVAL, 0, SETUP_FADE_INTERVAL, 0, 255);
-    setColorOnFace(makeColorHSB(playerHues[0], 255, currentDimness), 0);
-  } else if (challengeSetting == 2) {
-    currentDimness = 255 - map(millis() % ((SETUP_FADE_INTERVAL * 7) / 8), 0, ((SETUP_FADE_INTERVAL * 7) / 8), 0, 255);
-    setColorOnFace(makeColorHSB(playerHues[1], 255, currentDimness), 0);
-    setColorOnFace(makeColorHSB(playerHues[1], 255, (currentDimness + 127) % 255), 3);
-  } else if (challengeSetting == 3) {
-    currentDimness = 255 - map(millis() % ((SETUP_FADE_INTERVAL * 3) / 4), 0, ((SETUP_FADE_INTERVAL * 3) / 4), 0, 255);
-    setColorOnFace(makeColorHSB(playerHues[2], 255, currentDimness), 0);
-    setColorOnFace(makeColorHSB(playerHues[2], 255, (currentDimness + 85) % 255), 2);
-    setColorOnFace(makeColorHSB(playerHues[2], 255, (currentDimness + 170) % 255), 4);
-  }
+  currentDimness = 255 - map(millis() % SETUP_FADE_INTERVAL, 0, SETUP_FADE_INTERVAL, 0, 255);
+  setColorOnFace(makeColorHSB(0, 255, currentDimness), 0);
 }
 
 void gameDisplayLoop() {
@@ -498,13 +445,12 @@ void gameDisplayLoop() {
     long currentInterval = ABOVE_INTERVAL_MAX - (((difficultyLevel - DIFFICULTY_MIN) * (ABOVE_INTERVAL_MAX - ABOVE_INTERVAL_MIN) ) / (DIFFICULTY_MAX - DIFFICULTY_MIN));
     byte currentFullPips = (aboveTimer.getRemaining()) / (currentInterval / 6);//6 >>> 0
     byte dimmingPipBrightness = map(aboveTimer.getRemaining() - ((currentInterval / 6) * currentFullPips), 0, currentInterval / 6, 0, 255);
-    Color currentColor = makeColorHSB(playerHues[challengeSetting - 1], 255, 255);
 
     FOREACH_FACE(f) {
       if (f < currentFullPips) {
-        setColorOnFace(currentColor, f);
+        setColorOnFace(RED, f);
       } else if (f == currentFullPips) {
-        setColorOnFace(dim(currentColor, dimmingPipBrightness), f);
+        setColorOnFace(dim(RED, dimmingPipBrightness), f);
       } else {
         setColorOnFace(OFF, f);
       }
@@ -554,9 +500,9 @@ void deathDisplayLoop() {
   }
 
   if (isSourceOfDeath) {
-    setColor(makeColorHSB(playerHues[losingPlayer - 1], animationValue, 255));
+    setColor(makeColorHSB(0, animationValue, 255));
   } else {
-    setColor(makeColorHSB(playerHues[losingPlayer - 1], 255, animationValue));
+    setColor(makeColorHSB(0, 255, animationValue));
   }
 }
 
@@ -578,10 +524,6 @@ void victoryDisplayLoop() {
 
 byte getGameState(byte data) {//1st and 2nd bit
   return (data >> 4);
-}
-
-byte getChallengeSetting(byte data) {//5th and 6th bit
-  return (data & 3);
 }
 
 byte getGoStrikeSignal(byte data) {
@@ -620,8 +562,4 @@ byte getLifeSignal(byte data) {//6th bit
 
 byte getGoVictorySignal(byte data) {//3rd and 4th bit
   return ((data >> 2) & 3);
-}
-
-byte getLosingPlayer(byte data) {//5th and 6th bit
-  return (data & 3);
 }
