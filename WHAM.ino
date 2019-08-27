@@ -38,9 +38,12 @@ bool isRippling = false;
 #define RIPPLING_INTERVAL 500
 Timer ripplingTimer;
 
-#define SETUP_FADE_INTERVAL 1800
+#define SETUP_FADE_UP_INTERVAL 500
+#define SETUP_RED_INTERVAL 1000
+#define SETUP_FADE_DELAY 2000
 byte setupFadeFace;
 Timer setupFadeTimer;
+word redTime;
 
 #define EMERGE_INTERVAL_MAX 2000
 #define EMERGE_INTERVAL_MIN 500
@@ -70,7 +73,8 @@ void setup() {
   // put your setup code here, to run once:
   randomize();
   setupFadeFace = random(5);
-  setupFadeTimer.set(SETUP_FADE_INTERVAL + random(SETUP_FADE_INTERVAL));
+  redTime = SETUP_RED_INTERVAL + random(SETUP_RED_INTERVAL / 2);
+  setupFadeTimer.set(redTime + SETUP_FADE_UP_INTERVAL + random(SETUP_FADE_DELAY));
 }
 
 void loop() {
@@ -436,36 +440,24 @@ void setupDisplayLoop() {
   setColor(makeColorHSB(grassHue, 255, 255));
 
   if (setupFadeTimer.isExpired()) {
-    setupFadeTimer.set(SETUP_FADE_INTERVAL + random(SETUP_FADE_INTERVAL));
-    setupFadeFace = (setupFadeFace + random(4) + 1) % 6;
+    setupFadeFace = (setupFadeFace + random(4)) % 6;
+    redTime = SETUP_RED_INTERVAL + random(SETUP_RED_INTERVAL / 2);
+    setupFadeTimer.set(redTime + SETUP_FADE_UP_INTERVAL + random(SETUP_FADE_DELAY));
   }
 
   Color fadeColor;
-  byte dimming;
+  byte saturation;
 
-  if (setupFadeTimer.getRemaining() > (SETUP_FADE_INTERVAL * 3) / 4) {//first third
-
-    fadeColor = makeColorHSB(grassHue, 255, 255);
-    dimming = 255;
-
-  } else if (setupFadeTimer.getRemaining() > SETUP_FADE_INTERVAL / 2) {//second third
-
-    fadeColor = RED;
-    dimming = 255;
-
-  } else if (setupFadeTimer.getRemaining() > SETUP_FADE_INTERVAL / 4) {//last third
-
-    fadeColor = RED;
-    dimming = map(setupFadeTimer.getRemaining(), SETUP_FADE_INTERVAL / 4, SETUP_FADE_INTERVAL / 2, 0, 255);
-
-  } else {
-
-    fadeColor = makeColorHSB(grassHue, 255, 255);
-    dimming = 255 - map(setupFadeTimer.getRemaining(), 0, SETUP_FADE_INTERVAL / 4, 0, 255);
-
+  if (setupFadeTimer.getRemaining() < redTime + SETUP_FADE_UP_INTERVAL) {//we are inside the animation
+    if (setupFadeTimer.getRemaining() < SETUP_FADE_UP_INTERVAL) {//we are fading from white to green
+      saturation = 255 - map(setupFadeTimer.getRemaining(), 0, SETUP_FADE_UP_INTERVAL, 0, 255);
+      fadeColor = makeColorHSB(grassHue, saturation, 255);
+    } else {//we are red
+      fadeColor = RED;
+    }
   }
 
-  setColorOnFace(dim(fadeColor, dimming), setupFadeFace);
+  setColorOnFace(fadeColor, setupFadeFace);
 }
 
 void gameDisplayLoop() {
