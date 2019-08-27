@@ -40,7 +40,7 @@ Timer ripplingTimer;
 
 #define SETUP_FADE_UP_INTERVAL 500
 #define SETUP_RED_INTERVAL 1000
-#define SETUP_FADE_DELAY 2000
+#define SETUP_FADE_DELAY 3000
 byte setupFadeFace;
 Timer setupFadeTimer;
 word redTime;
@@ -455,9 +455,9 @@ void setupDisplayLoop() {
     } else {//we are red
       fadeColor = RED;
     }
-  }
 
-  setColorOnFace(fadeColor, setupFadeFace);
+    setColorOnFace(fadeColor, setupFadeFace);
+  }
 }
 
 void gameDisplayLoop() {
