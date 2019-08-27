@@ -38,7 +38,9 @@ bool isRippling = false;
 #define RIPPLING_INTERVAL 500
 Timer ripplingTimer;
 
-#define SETUP_FADE_INTERVAL 1500
+#define SETUP_FADE_INTERVAL 1800
+byte setupFadeFace;
+Timer setupFadeTimer;
 
 #define EMERGE_INTERVAL_MAX 2000
 #define EMERGE_INTERVAL_MIN 500
@@ -67,6 +69,8 @@ long timeOfDeath;
 void setup() {
   // put your setup code here, to run once:
   randomize();
+  setupFadeFace = random(5);
+  setupFadeTimer.set(SETUP_FADE_INTERVAL + random(SETUP_FADE_INTERVAL));
 }
 
 void loop() {
@@ -428,11 +432,40 @@ void resetAllVariables() {
 /////////////////
 
 void setupDisplayLoop() {
-  setColor(makeColorHSB(grassHue, 255, 255));
-  byte currentDimness;
 
-  currentDimness = 255 - map(millis() % SETUP_FADE_INTERVAL, 0, SETUP_FADE_INTERVAL, 0, 255);
-  setColorOnFace(makeColorHSB(0, 255, currentDimness), 0);
+  setColor(makeColorHSB(grassHue, 255, 255));
+
+  if (setupFadeTimer.isExpired()) {
+    setupFadeTimer.set(SETUP_FADE_INTERVAL + random(SETUP_FADE_INTERVAL));
+    setupFadeFace = (setupFadeFace + random(4) + 1) % 6;
+  }
+
+  Color fadeColor;
+  byte dimming;
+
+  if (setupFadeTimer.getRemaining() > (SETUP_FADE_INTERVAL * 3) / 4) {//first third
+
+    fadeColor = makeColorHSB(grassHue, 255, 255);
+    dimming = 255;
+
+  } else if (setupFadeTimer.getRemaining() > SETUP_FADE_INTERVAL / 2) {//second third
+
+    fadeColor = RED;
+    dimming = 255;
+
+  } else if (setupFadeTimer.getRemaining() > SETUP_FADE_INTERVAL / 4) {//last third
+
+    fadeColor = RED;
+    dimming = map(setupFadeTimer.getRemaining(), SETUP_FADE_INTERVAL / 4, SETUP_FADE_INTERVAL / 2, 0, 255);
+
+  } else {
+
+    fadeColor = makeColorHSB(grassHue, 255, 255);
+    dimming = 255 - map(setupFadeTimer.getRemaining(), 0, SETUP_FADE_INTERVAL / 4, 0, 255);
+
+  }
+
+  setColorOnFace(dim(fadeColor, dimming), setupFadeFace);
 }
 
 void gameDisplayLoop() {
